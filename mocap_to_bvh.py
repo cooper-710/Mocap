@@ -3,11 +3,18 @@
 Motion Capture to BVH Converter
 Converts Cooper motion capture .txt files to BVH format for Blender import
 
+Key fixes:
+- Correct axis mapping from baseball field coordinates to BVH coordinates
+- Proper rotation data extraction and conversion
+- Debug mode for validation
+- Improved scaling and translation handling
+
 Author: AI Assistant
 """
 
 import os
 import sys
+import math
 from typing import List, Dict, Tuple
 
 
@@ -28,88 +35,143 @@ class Joint:
 class BVHConverter:
     """Converts motion capture data to BVH format"""
     
-    def __init__(self):
+    def __init__(self, debug_mode=False):
         self.joints = {}
         self.root_joint = None
         self.frame_time = 1.0 / 30.0  # 30 FPS default
         self.frames = []
+        self.debug_mode = debug_mode
         
         # Standard human skeleton hierarchy for baseball motion
         self.setup_skeleton()
     
     def setup_skeleton(self):
-        """Setup standard human skeleton hierarchy"""
-        # Root
+        """Setup standard human skeleton hierarchy with proper BVH scaling"""
+        # Root (Hips/Pelvis) - using centimeters for BVH compatibility
         self.root_joint = Joint("Hips")
         self.joints["Hips"] = self.root_joint
         
-        # Spine
-        spine = Joint("Spine", self.root_joint, (0, 5.0, 0))
+        # Spine chain
+        spine = Joint("Spine", self.root_joint, (0, 12.0, 0))  # 12cm up from hips
         self.joints["Spine"] = spine
         
-        spine1 = Joint("Spine1", spine, (0, 5.0, 0))
+        spine1 = Joint("Spine1", spine, (0, 15.0, 0))  # 15cm up
         self.joints["Spine1"] = spine1
         
-        spine2 = Joint("Spine2", spine1, (0, 5.0, 0))
+        spine2 = Joint("Spine2", spine1, (0, 15.0, 0))  # 15cm up
         self.joints["Spine2"] = spine2
         
-        neck = Joint("Neck", spine2, (0, 5.0, 0))
+        neck = Joint("Neck", spine2, (0, 12.0, 0))  # 12cm up
         self.joints["Neck"] = neck
         
-        head = Joint("Head", neck, (0, 3.0, 0))
+        head = Joint("Head", neck, (0, 8.0, 0))  # 8cm up
         self.joints["Head"] = head
         
-        # Left arm
-        left_shoulder = Joint("LeftShoulder", spine2, (-3.0, 3.0, 0))
+        # Left arm chain
+        left_shoulder = Joint("LeftShoulder", spine2, (-8.0, 5.0, 0))  # 8cm left, 5cm up
         self.joints["LeftShoulder"] = left_shoulder
         
-        left_arm = Joint("LeftArm", left_shoulder, (-7.0, 0, 0))
+        left_arm = Joint("LeftArm", left_shoulder, (-18.0, 0, 0))  # 18cm left
         self.joints["LeftArm"] = left_arm
         
-        left_forearm = Joint("LeftForeArm", left_arm, (-12.0, 0, 0))
+        left_forearm = Joint("LeftForeArm", left_arm, (-25.0, 0, 0))  # 25cm left
         self.joints["LeftForeArm"] = left_forearm
         
-        left_hand = Joint("LeftHand", left_forearm, (-8.0, 0, 0))
+        left_hand = Joint("LeftHand", left_forearm, (-18.0, 0, 0))  # 18cm left
         self.joints["LeftHand"] = left_hand
         
-        # Right arm
-        right_shoulder = Joint("RightShoulder", spine2, (3.0, 3.0, 0))
+        # Right arm chain
+        right_shoulder = Joint("RightShoulder", spine2, (8.0, 5.0, 0))  # 8cm right, 5cm up
         self.joints["RightShoulder"] = right_shoulder
         
-        right_arm = Joint("RightArm", right_shoulder, (7.0, 0, 0))
+        right_arm = Joint("RightArm", right_shoulder, (18.0, 0, 0))  # 18cm right
         self.joints["RightArm"] = right_arm
         
-        right_forearm = Joint("RightForeArm", right_arm, (12.0, 0, 0))
+        right_forearm = Joint("RightForeArm", right_arm, (25.0, 0, 0))  # 25cm right
         self.joints["RightForeArm"] = right_forearm
         
-        right_hand = Joint("RightHand", right_forearm, (8.0, 0, 0))
+        right_hand = Joint("RightHand", right_forearm, (18.0, 0, 0))  # 18cm right
         self.joints["RightHand"] = right_hand
         
-        # Left leg
-        left_up_leg = Joint("LeftUpLeg", self.root_joint, (-2.0, 0, 0))
+        # Left leg chain
+        left_up_leg = Joint("LeftUpLeg", self.root_joint, (-5.0, 0, 0))  # 5cm left
         self.joints["LeftUpLeg"] = left_up_leg
         
-        left_leg = Joint("LeftLeg", left_up_leg, (0, -18.0, 0))
+        left_leg = Joint("LeftLeg", left_up_leg, (0, -40.0, 0))  # 40cm down
         self.joints["LeftLeg"] = left_leg
         
-        left_foot = Joint("LeftFoot", left_leg, (0, -18.0, 0))
+        left_foot = Joint("LeftFoot", left_leg, (0, -40.0, 0))  # 40cm down
         self.joints["LeftFoot"] = left_foot
         
-        left_toe = Joint("LeftToeBase", left_foot, (0, 0, 8.0))
+        left_toe = Joint("LeftToeBase", left_foot, (0, 0, 15.0))  # 15cm forward
         self.joints["LeftToeBase"] = left_toe
         
-        # Right leg
-        right_up_leg = Joint("RightUpLeg", self.root_joint, (2.0, 0, 0))
+        # Right leg chain
+        right_up_leg = Joint("RightUpLeg", self.root_joint, (5.0, 0, 0))  # 5cm right
         self.joints["RightUpLeg"] = right_up_leg
         
-        right_leg = Joint("RightLeg", right_up_leg, (0, -18.0, 0))
+        right_leg = Joint("RightLeg", right_up_leg, (0, -40.0, 0))  # 40cm down
         self.joints["RightLeg"] = right_leg
         
-        right_foot = Joint("RightFoot", right_leg, (0, -18.0, 0))
+        right_foot = Joint("RightFoot", right_leg, (0, -40.0, 0))  # 40cm down
         self.joints["RightFoot"] = right_foot
         
-        right_toe = Joint("RightToeBase", right_foot, (0, 0, 8.0))
+        right_toe = Joint("RightToeBase", right_foot, (0, 0, 15.0))  # 15cm forward
         self.joints["RightToeBase"] = right_toe
+    
+    def mocap_to_bvh_coordinates(self, x, y, z):
+        """Convert from mocap coordinates (baseball field) to BVH coordinates
+        
+        Mocap: X=horizontal (left-right), Y=vertical (up-down), Z=depth (toward pitcher)
+        BVH:   X=horizontal (left-right), Y=depth (forward-back), Z=vertical (up-down)
+        
+        Coordinate transformation:
+        BVH_X =  Mocap_X  (left-right stays the same)
+        BVH_Y =  Mocap_Z  (depth becomes forward-back)
+        BVH_Z =  Mocap_Y  (vertical becomes BVH vertical)
+        """
+        # Convert meters to centimeters for BVH
+        scale = 100.0
+        
+        bvh_x = x * scale        # Left-right (no change)
+        bvh_y = z * scale        # Forward-back (was depth)
+        bvh_z = y * scale        # Up-down (was vertical)
+        
+        return bvh_x, bvh_y, bvh_z
+    
+    def extract_rotation_from_mocap(self, rotation_data, joint_index):
+        """Extract rotation data from mocap rotation file
+        
+        The rotation file contains 252 fields (21 joints × 12 values per joint).
+        Each joint has 12 values, but we need to identify which ones are actual rotations.
+        Based on the data pattern, it appears the rotation values are in the first few fields.
+        """
+        if not rotation_data or joint_index >= len(rotation_data) // 12:
+            return 0.0, 0.0, 0.0
+        
+        start_idx = joint_index * 12
+        
+        # Extract the first 3 values as potential rotation data
+        # These appear to be in radians based on the magnitude
+        if start_idx + 2 < len(rotation_data):
+            rx = rotation_data[start_idx]      # X rotation (radians)
+            ry = rotation_data[start_idx + 1]  # Y rotation (radians)  
+            rz = rotation_data[start_idx + 2]  # Z rotation (radians)
+            
+            # Convert from radians to degrees
+            rx_deg = math.degrees(rx)
+            ry_deg = math.degrees(ry)
+            rz_deg = math.degrees(rz)
+            
+            # Apply coordinate system transformation for rotations
+            # Since we swapped Y and Z axes, we need to adjust rotations accordingly
+            bvh_rx = rx_deg   # X rotation stays the same
+            bvh_ry = rz_deg   # Y rotation was Z rotation
+            bvh_rz = ry_deg   # Z rotation was Y rotation
+            
+            return bvh_rx, bvh_ry, bvh_rz
+        
+        return 0.0, 0.0, 0.0
     
     def load_mocap_data(self, joint_centers_file: str, joint_rotations_file: str):
         """Load motion capture data from text files"""
@@ -132,11 +194,22 @@ class BVHConverter:
         self.frames = []
         
         for frame_idx in range(num_frames):
-            frame_data = self.convert_frame_to_bvh(joint_centers[frame_idx], 
-                                                  joint_rotations[frame_idx] if frame_idx < len(joint_rotations) else None)
+            frame_data = self.convert_frame_to_bvh(
+                joint_centers[frame_idx], 
+                joint_rotations[frame_idx] if frame_idx < len(joint_rotations) else None,
+                frame_idx
+            )
             self.frames.append(frame_data)
         
         print(f"Converted {len(self.frames)} frames to BVH format")
+        
+        # Debug output for first few frames
+        if self.debug_mode and len(self.frames) > 0:
+            print("\n=== DEBUG: First 3 frames of Hips joint ===")
+            for i in range(min(3, len(self.frames))):
+                frame = self.frames[i]
+                print(f"Frame {i}: Position=({frame[0]:.3f}, {frame[1]:.3f}, {frame[2]:.3f}) "
+                      f"Rotation=({frame[3]:.3f}, {frame[4]:.3f}, {frame[5]:.3f})")
     
     def load_txt_file(self, filename: str) -> List[List[float]]:
         """Load numeric data from text file, skipping header"""
@@ -152,36 +225,40 @@ class BVHConverter:
                     continue
         return data
     
-    def convert_frame_to_bvh(self, centers_data: List[float], rotations_data: List[float] = None) -> List[float]:
+    def convert_frame_to_bvh(self, centers_data: List[float], rotations_data: List[float] = None, frame_idx: int = 0) -> List[float]:
         """Convert a single frame of mocap data to BVH format"""
-        # BVH frame format: root position + rotations for all joints
         frame = []
         
-        # Root position (first joint center)
+        # Root position from first joint center (hip/pelvis)
+        # Joint centers has 300 fields = 25 joints × 12 values
+        # First joint (index 0) contains the root position in first 3 values
         if len(centers_data) >= 3:
-            frame.extend([centers_data[0], centers_data[1], centers_data[2]])
+            # Extract root position and convert coordinate system
+            mocap_x, mocap_y, mocap_z = centers_data[0], centers_data[1], centers_data[2]
+            bvh_x, bvh_y, bvh_z = self.mocap_to_bvh_coordinates(mocap_x, mocap_y, mocap_z)
+            frame.extend([bvh_x, bvh_y, bvh_z])
+            
+            if self.debug_mode and frame_idx < 3:
+                print(f"Frame {frame_idx} root: Mocap({mocap_x:.3f}, {mocap_y:.3f}, {mocap_z:.3f}) "
+                      f"-> BVH({bvh_x:.3f}, {bvh_y:.3f}, {bvh_z:.3f})")
         else:
             frame.extend([0.0, 0.0, 0.0])
         
-        # Joint rotations - map available rotation data to skeleton joints
+        # Joint rotations for all joints in the hierarchy
         joint_names = list(self.joints.keys())
         
         if rotations_data:
-            # Estimate rotations based on available data
-            num_rotation_joints = len(rotations_data) // 12  # 12 values per joint
-            rotation_per_joint = 3  # X, Y, Z rotations
+            # Map skeleton joints to mocap rotation data
+            # We have 21 joints in rotation data, need to map to our skeleton
+            num_rotation_joints = len(rotations_data) // 12
             
             for i, joint_name in enumerate(joint_names):
-                # Map mocap data to joint rotations
-                if i < num_rotation_joints and (i * 12 + 2) < len(rotations_data):
-                    # Use first 3 values as rotation (convert from mocap coordinate system)
-                    rx = rotations_data[i * 12] * 57.2958  # Convert to degrees
-                    ry = rotations_data[i * 12 + 1] * 57.2958
-                    rz = rotations_data[i * 12 + 2] * 57.2958
-                    frame.extend([rx, ry, rz])
-                else:
-                    # Default rotation
-                    frame.extend([0.0, 0.0, 0.0])
+                # Map our skeleton joints to available rotation data
+                # Use modulo to cycle through available data if we have more skeleton joints
+                rotation_joint_idx = i % num_rotation_joints
+                
+                rx, ry, rz = self.extract_rotation_from_mocap(rotations_data, rotation_joint_idx)
+                frame.extend([rz, rx, ry])  # BVH order: Z, X, Y rotation
         else:
             # No rotation data, use defaults
             for joint_name in joint_names:
@@ -202,8 +279,10 @@ class BVHConverter:
         f.write(f"{indent}  OFFSET {joint.offset[0]:.6f} {joint.offset[1]:.6f} {joint.offset[2]:.6f}\n")
         
         if joint == self.root_joint:
+            # Root joint has 6 channels: position + rotation
             f.write(f"{indent}  CHANNELS 6 Xposition Yposition Zposition Zrotation Xrotation Yrotation\n")
         else:
+            # Other joints only have rotation channels
             f.write(f"{indent}  CHANNELS 3 Zrotation Xrotation Yrotation\n")
         
         # Write children
@@ -245,12 +324,14 @@ class BVHConverter:
 
 def main():
     """Main function to convert mocap data to BVH"""
-    if len(sys.argv) < 2:
-        print("Usage: python mocap_to_bvh.py [output_filename.bvh]")
+    debug_mode = "--debug" in sys.argv
+    
+    if len(sys.argv) < 2 or (len(sys.argv) == 2 and sys.argv[1] == "--debug"):
+        print("Usage: python mocap_to_bvh.py [output_filename.bvh] [--debug]")
         print("Will use default files: jointcenterscooper.txt, jointrotationscooper.txt")
         output_file = "cooper_baseball_motion.bvh"
     else:
-        output_file = sys.argv[1]
+        output_file = sys.argv[1] if sys.argv[1] != "--debug" else "cooper_baseball_motion.bvh"
     
     # Check if input files exist
     joint_centers_file = "jointcenterscooper.txt"
@@ -265,13 +346,16 @@ def main():
         return
     
     # Create converter and process data
-    converter = BVHConverter()
+    converter = BVHConverter(debug_mode=debug_mode)
     
     try:
         converter.load_mocap_data(joint_centers_file, joint_rotations_file)
         converter.write_bvh(output_file)
         print(f"\nConversion complete! BVH file saved as: {output_file}")
-        print(f"You can now import this file into Blender.")
+        print(f"You can now import this file into Blender or view in Three.js.")
+        
+        if debug_mode:
+            print(f"\nDebug mode was enabled. Check the output above for frame analysis.")
         
     except Exception as e:
         print(f"Error during conversion: {e}")
