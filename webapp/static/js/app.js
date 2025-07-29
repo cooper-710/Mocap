@@ -1,6 +1,6 @@
 /**
  * Main Application JavaScript
- * Handles UI interactions and coordinates the motion viewer
+ * Handles UI interactions and coordinates the motion viewer with JSON motion data
  */
 
 class BaseballMotionApp {
@@ -77,9 +77,8 @@ class BaseballMotionApp {
         try {
             this.viewer.showLoading();
             
-            // Load motion data info
-            const response = await fetch('/api/motion-data');
-            this.motionData = await response.json();
+            // Load JSON motion data directly from the new API
+            this.motionData = await this.viewer.loadMotionData('/api/motion-data');
             
             if (this.motionData.error) {
                 throw new Error(this.motionData.error);
@@ -88,15 +87,17 @@ class BaseballMotionApp {
             // Update UI with motion info
             this.updateMotionInfo();
             
-            // Load BVH data into viewer
-            const bvhData = await this.viewer.loadBVH('/api/bvh');
-            
             // Update frame slider
             const frameSlider = document.getElementById('frame-slider');
-            frameSlider.max = bvhData.frames.length - 1;
+            frameSlider.max = this.motionData.totalFrames - 1;
             frameSlider.value = 0;
             
-            console.log('Motion data loaded successfully');
+            console.log('Motion data loaded successfully:', {
+                joints: this.motionData.jointNames.length,
+                bones: this.motionData.boneConnections.length,
+                frames: this.motionData.totalFrames,
+                duration: this.motionData.duration
+            });
             
         } catch (error) {
             console.error('Error loading motion data:', error);
@@ -109,8 +110,8 @@ class BaseballMotionApp {
         
         document.getElementById('duration').textContent = this.motionData.duration.toFixed(2);
         document.getElementById('fps').textContent = this.motionData.fps.toFixed(1);
-        document.getElementById('total-frames-info').textContent = this.motionData.frame_count;
-        document.getElementById('total-frames').textContent = this.motionData.frame_count;
+        document.getElementById('total-frames-info').textContent = this.motionData.totalFrames;
+        document.getElementById('total-frames').textContent = this.motionData.totalFrames;
     }
 
     play() {
@@ -180,33 +181,40 @@ class BaseballMotionApp {
                 throw new Error(result.error);
             }
             
-            this.showMessage('BVH file regenerated successfully!', 'success');
-            
-            // Reload the motion data
-            await this.loadMotionData();
+            this.showMessage('BVH file regenerated successfully! Note: This app now uses JSON data directly.', 'success');
             
         } catch (error) {
             console.error('Error regenerating BVH:', error);
             this.showMessage('Failed to regenerate BVH: ' + error.message, 'error');
         } finally {
             const convertBtn = document.getElementById('convert-btn');
-            convertBtn.textContent = '🔄 Regenerate BVH';
+            convertBtn.textContent = '🔄 Regenerate BVH (Legacy)';
             convertBtn.disabled = false;
         }
     }
 
     exportData() {
-        // Create a simple export of the current frame data
+        // Export the JSON motion data instead of BVH info
         if (!this.motionData) {
             this.showMessage('No motion data available to export', 'error');
             return;
         }
         
         const exportData = {
-            motion_info: this.motionData,
+            motion_info: {
+                joints: this.motionData.jointNames.length,
+                bones: this.motionData.boneConnections.length,
+                frames: this.motionData.totalFrames,
+                duration: this.motionData.duration,
+                frameRate: this.motionData.frameRate
+            },
+            joint_names: this.motionData.jointNames,
+            bone_connections: this.motionData.boneConnections,
             current_frame: this.viewer.getCurrentFrame(),
             total_frames: this.viewer.getTotalFrames(),
-            timestamp: new Date().toISOString()
+            sample_frame_data: this.motionData.frames[this.viewer.getCurrentFrame()],
+            timestamp: new Date().toISOString(),
+            format: 'JSON Motion Data'
         };
         
         const blob = new Blob([JSON.stringify(exportData, null, 2)], {
@@ -250,6 +258,17 @@ class BaseballMotionApp {
         const message = document.createElement('div');
         message.className = `message ${type}`;
         message.textContent = text;
+        
+        // Style the message
+        message.style.cssText = `
+            margin: 10px 0;
+            padding: 10px 15px;
+            border-radius: 4px;
+            font-weight: bold;
+            ${type === 'error' ? 'background: rgba(255, 0, 0, 0.1); color: #d8000c; border: 1px solid #d8000c;' : ''}
+            ${type === 'success' ? 'background: rgba(0, 255, 0, 0.1); color: #008000; border: 1px solid #008000;' : ''}
+            ${type === 'info' ? 'background: rgba(0, 123, 255, 0.1); color: #007bff; border: 1px solid #007bff;' : ''}
+        `;
         
         // Insert at the top of controls panel
         const controlsPanel = document.getElementById('controls-panel');

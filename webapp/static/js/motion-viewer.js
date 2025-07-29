@@ -1,6 +1,6 @@
 /**
  * Motion Capture Viewer using Three.js
- * Displays 3D skeletal animation from BVH data
+ * Displays 3D skeletal animation from JSON motion data (no BVH)
  */
 
 class MotionViewer {
@@ -11,19 +11,18 @@ class MotionViewer {
         this.renderer = null;
         this.controls = null;
         
-        // Animation
-        this.mixer = null;
-        this.action = null;
-        this.clock = new THREE.Clock();
-        this.isPlaying = false;
+        // Animation data
+        this.motionData = null;
         this.currentFrame = 0;
         this.totalFrames = 0;
+        this.frameRate = 30.0;
         this.animationSpeed = 1.0;
+        this.isPlaying = false;
+        this.lastFrameTime = 0;
         
         // Visualization objects
-        this.skeletonMesh = null;
-        this.skeletonHelper = null;
-        this.jointSpheres = [];
+        this.jointSpheres = new Map(); // Map<jointName, THREE.Mesh>
+        this.boneLines = new Map();    // Map<boneName, THREE.Line>
         this.groundPlane = null;
         this.trajectoryLine = null;
         
@@ -32,6 +31,9 @@ class MotionViewer {
         this.showJoints = true;
         this.showGround = false;
         this.showTrajectory = false;
+        
+        // Performance
+        this.clock = new THREE.Clock();
         
         this.init();
     }
@@ -104,8 +106,7 @@ class MotionViewer {
     }
 
     setupControls() {
-        // Note: You might need to include OrbitControls separately
-        // For now, we'll implement basic mouse controls
+        // Basic mouse controls for camera movement
         this.setupBasicControls();
     }
 
@@ -169,129 +170,206 @@ class MotionViewer {
         this.scene.add(this.groundPlane);
     }
 
-    async loadBVH(url) {
+    async loadMotionData(url) {
         try {
-            const loader = new BVHLoader();
-            const bvhData = await loader.load(url);
+            this.showLoading();
             
-            this.setupAnimation(bvhData);
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            this.motionData = await response.json();
+            
+            if (this.motionData.error) {
+                throw new Error(this.motionData.error);
+            }
+            
+            this.setupAnimation();
             this.hideLoading();
             
-            return bvhData;
+            console.log('Motion data loaded successfully:', {
+                joints: this.motionData.jointNames.length,
+                bones: this.motionData.boneConnections.length,
+                frames: this.motionData.totalFrames,
+                duration: this.motionData.duration
+            });
+            
+            return this.motionData;
+            
         } catch (error) {
-            console.error('Error loading BVH:', error);
+            console.error('Error loading motion data:', error);
             this.showError('Failed to load motion data: ' + error.message);
             throw error;
         }
     }
 
-    setupAnimation(bvhData) {
-        // Remove existing skeleton
-        if (this.skeletonMesh) {
-            this.scene.remove(this.skeletonMesh);
-        }
-        if (this.skeletonHelper) {
-            this.scene.remove(this.skeletonHelper);
-        }
-        this.clearJointSpheres();
-
-        // Create skeleton visualization
-        const bones = bvhData.skeleton.bones;
+    setupAnimation() {
+        // Clear existing visualization
+        this.clearVisualization();
         
-        // Create skeleton helper for bone connections
-        this.skeletonHelper = new SkeletonHelper(bvhData.skeleton);
-        this.skeletonHelper.visible = this.showSkeleton;
-        this.scene.add(this.skeletonHelper);
-
+        if (!this.motionData || !this.motionData.frames || this.motionData.frames.length === 0) {
+            throw new Error('Invalid motion data');
+        }
+        
+        // Set animation properties
+        this.totalFrames = this.motionData.totalFrames;
+        this.frameRate = this.motionData.frameRate;
+        this.currentFrame = 0;
+        
         // Create joint spheres
-        this.createJointSpheres(bones);
-
-        // Setup animation
-        this.mixer = new THREE.AnimationMixer(bvhData.skeleton.bones[0]);
-        this.action = this.mixer.clipAction(bvhData.clip);
-        this.action.setLoop(THREE.LoopRepeat);
+        this.createJointSpheres();
         
-        this.totalFrames = bvhData.frames.length;
-        this.animationDuration = bvhData.duration;
+        // Create bone connections
+        this.createBoneConnections();
         
-        console.log(`Loaded animation: ${this.totalFrames} frames, ${this.animationDuration.toFixed(2)} seconds`);
+        // Set initial frame
+        this.setFrame(0);
+        
+        console.log(`Animation setup complete: ${this.totalFrames} frames at ${this.frameRate} FPS`);
     }
 
-    createJointSpheres(bones) {
+    createJointSpheres() {
         this.clearJointSpheres();
         
-        const sphereGeometry = new THREE.SphereGeometry(1.5, 8, 6);
-        const sphereMaterial = new THREE.MeshLambertMaterial({ color: 0x00ff88 });
-
-        bones.forEach(bone => {
+        const sphereGeometry = new THREE.SphereGeometry(2.0, 12, 8);
+        
+        this.motionData.jointNames.forEach(jointName => {
+            // Different colors for different body parts
+            let color = 0x00ff88; // Default green
+            
+            if (jointName.includes('Head') || jointName.includes('Neck')) {
+                color = 0xff4444; // Red for head/neck
+            } else if (jointName.includes('Left')) {
+                color = 0x4444ff; // Blue for left side
+            } else if (jointName.includes('Right')) {
+                color = 0xffaa00; // Orange for right side
+            } else if (jointName.includes('Spine') || jointName.includes('Hips')) {
+                color = 0xff88ff; // Magenta for spine
+            }
+            
+            const sphereMaterial = new THREE.MeshLambertMaterial({ color });
             const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
             sphere.castShadow = true;
             sphere.visible = this.showJoints;
-            this.jointSpheres.push(sphere);
+            
+            this.jointSpheres.set(jointName, sphere);
             this.scene.add(sphere);
         });
+    }
+
+    createBoneConnections() {
+        this.clearBoneConnections();
+        
+        const lineMaterial = new THREE.LineBasicMaterial({ 
+            color: 0xffffff,
+            linewidth: 3
+        });
+        
+        this.motionData.boneConnections.forEach(([parentJoint, childJoint]) => {
+            const lineGeometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(6); // 2 points × 3 coordinates
+            lineGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            
+            const line = new THREE.Line(lineGeometry, lineMaterial);
+            line.visible = this.showSkeleton;
+            
+            const boneName = `${parentJoint}-${childJoint}`;
+            this.boneLines.set(boneName, line);
+            this.scene.add(line);
+        });
+    }
+
+    clearVisualization() {
+        this.clearJointSpheres();
+        this.clearBoneConnections();
     }
 
     clearJointSpheres() {
         this.jointSpheres.forEach(sphere => {
             this.scene.remove(sphere);
         });
-        this.jointSpheres = [];
+        this.jointSpheres.clear();
     }
 
-    updateJointSpheres() {
-        if (!this.skeletonHelper || !this.skeletonHelper.skeleton) return;
+    clearBoneConnections() {
+        this.boneLines.forEach(line => {
+            this.scene.remove(line);
+        });
+        this.boneLines.clear();
+    }
+
+    updateVisualization(frameData) {
+        if (!frameData) return;
         
-        const bones = this.skeletonHelper.skeleton.bones;
+        // Update joint positions
+        for (const [jointName, jointData] of Object.entries(frameData)) {
+            const sphere = this.jointSpheres.get(jointName);
+            if (sphere && jointData) {
+                sphere.position.set(jointData.x, jointData.y, jointData.z);
+                
+                // Apply rotation if available
+                if (jointData.rx !== undefined) {
+                    sphere.rotation.set(
+                        THREE.MathUtils.degToRad(jointData.rx),
+                        THREE.MathUtils.degToRad(jointData.ry),
+                        THREE.MathUtils.degToRad(jointData.rz)
+                    );
+                }
+            }
+        }
         
-        bones.forEach((bone, index) => {
-            if (index < this.jointSpheres.length) {
-                const worldPos = new THREE.Vector3();
-                bone.getWorldPosition(worldPos);
-                this.jointSpheres[index].position.copy(worldPos);
+        // Update bone connections
+        this.motionData.boneConnections.forEach(([parentJoint, childJoint]) => {
+            const parentData = frameData[parentJoint];
+            const childData = frameData[childJoint];
+            const boneName = `${parentJoint}-${childJoint}`;
+            const line = this.boneLines.get(boneName);
+            
+            if (line && parentData && childData) {
+                const positions = line.geometry.attributes.position.array;
+                
+                // Parent position
+                positions[0] = parentData.x;
+                positions[1] = parentData.y;
+                positions[2] = parentData.z;
+                
+                // Child position
+                positions[3] = childData.x;
+                positions[4] = childData.y;
+                positions[5] = childData.z;
+                
+                line.geometry.attributes.position.needsUpdate = true;
             }
         });
     }
 
     play() {
-        if (this.action) {
-            this.action.play();
-            this.isPlaying = true;
-        }
+        this.isPlaying = true;
+        this.lastFrameTime = this.clock.getElapsedTime();
     }
 
     pause() {
-        if (this.action) {
-            this.action.paused = true;
-            this.isPlaying = false;
-        }
+        this.isPlaying = false;
     }
 
     stop() {
-        if (this.action) {
-            this.action.stop();
-            this.isPlaying = false;
-            this.currentFrame = 0;
-        }
+        this.isPlaying = false;
+        this.setFrame(0);
     }
 
     setFrame(frameNumber) {
-        if (this.action && this.animationDuration) {
-            const time = (frameNumber / this.totalFrames) * this.animationDuration;
-            this.action.time = time;
-            this.currentFrame = frameNumber;
-            
-            if (this.mixer) {
-                this.mixer.update(0); // Update without advancing time
-            }
-        }
+        if (!this.motionData || !this.motionData.frames) return;
+        
+        frameNumber = Math.max(0, Math.min(frameNumber, this.totalFrames - 1));
+        this.currentFrame = frameNumber;
+        
+        const frameData = this.motionData.frames[frameNumber];
+        this.updateVisualization(frameData);
     }
 
     setSpeed(speed) {
-        this.animationSpeed = speed;
-        if (this.action) {
-            this.action.timeScale = speed;
-        }
+        this.animationSpeed = Math.max(0.1, Math.min(speed, 5.0));
     }
 
     setViewMode(mode) {
@@ -318,9 +396,9 @@ class MotionViewer {
 
     toggleSkeleton(show) {
         this.showSkeleton = show;
-        if (this.skeletonHelper) {
-            this.skeletonHelper.visible = show;
-        }
+        this.boneLines.forEach(line => {
+            line.visible = show;
+        });
     }
 
     toggleJoints(show) {
@@ -340,24 +418,19 @@ class MotionViewer {
     animate() {
         requestAnimationFrame(() => this.animate());
 
-        const deltaTime = this.clock.getDelta();
-
-        if (this.mixer && this.isPlaying) {
-            this.mixer.update(deltaTime);
+        // Handle frame animation
+        if (this.isPlaying && this.motionData && this.totalFrames > 0) {
+            const currentTime = this.clock.getElapsedTime();
+            const deltaTime = currentTime - this.lastFrameTime;
             
-            // Update current frame
-            if (this.action) {
-                const progress = this.action.time / this.animationDuration;
-                this.currentFrame = Math.floor(progress * this.totalFrames);
+            // Calculate frames to advance based on frame rate and speed
+            const frameAdvance = deltaTime * this.frameRate * this.animationSpeed;
+            
+            if (frameAdvance >= 1.0) {
+                const newFrame = (this.currentFrame + Math.floor(frameAdvance)) % this.totalFrames;
+                this.setFrame(newFrame);
+                this.lastFrameTime = currentTime;
             }
-        }
-
-        // Update joint spheres positions
-        this.updateJointSpheres();
-
-        // Update skeleton helper
-        if (this.skeletonHelper) {
-            this.skeletonHelper.updateMatrixWorld(true);
         }
 
         this.renderer.render(this.scene, this.camera);
@@ -374,20 +447,52 @@ class MotionViewer {
     }
 
     showLoading() {
-        document.getElementById('loading').style.display = 'flex';
+        const loadingElement = document.getElementById('loading');
+        if (loadingElement) {
+            loadingElement.style.display = 'flex';
+        }
     }
 
     hideLoading() {
-        document.getElementById('loading').style.display = 'none';
+        const loadingElement = document.getElementById('loading');
+        if (loadingElement) {
+            loadingElement.style.display = 'none';
+        }
     }
 
     showError(message) {
         this.hideLoading();
         console.error(message);
-        // You could add a proper error display here
-        alert('Error: ' + message);
+        
+        // Show error in UI instead of alert
+        const errorElement = document.createElement('div');
+        errorElement.className = 'error-message';
+        errorElement.textContent = message;
+        errorElement.style.cssText = `
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 0, 0, 0.9);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            max-width: 400px;
+            text-align: center;
+            z-index: 1000;
+        `;
+        
+        document.body.appendChild(errorElement);
+        
+        // Auto-remove after 10 seconds
+        setTimeout(() => {
+            if (errorElement.parentNode) {
+                errorElement.remove();
+            }
+        }, 10000);
     }
 
+    // Getter methods for compatibility
     getCurrentFrame() {
         return this.currentFrame;
     }
@@ -398,5 +503,9 @@ class MotionViewer {
 
     getIsPlaying() {
         return this.isPlaying;
+    }
+
+    getMotionData() {
+        return this.motionData;
     }
 }
