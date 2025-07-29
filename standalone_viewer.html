@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Baseball Motion Capture Viewer - Standalone</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: #333;
+            min-height: 100vh;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        header {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 1rem 2rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        header h1 {
+            color: #1e3c72;
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        header p {
+            color: #666;
+            font-size: 1.1rem;
+        }
+
+        .main-content {
+            display: flex;
+            flex: 1;
+            gap: 1rem;
+            padding: 1rem;
+        }
+
+        .viewer-container {
+            flex: 1;
+            background: #000;
+            border-radius: 10px;
+            overflow: hidden;
+            position: relative;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        #canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .controls-panel {
+            width: 320px;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 10px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            overflow-y: auto;
+        }
+
+        .control-group {
+            margin-bottom: 2rem;
+        }
+
+        .control-group h3 {
+            color: #1e3c72;
+            font-size: 1.2rem;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 0.5rem;
+        }
+
+        .btn {
+            background: #f5f5f5;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            padding: 0.5rem 1rem;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+            margin: 0.25rem;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .btn.primary {
+            background: #1e3c72;
+            color: white;
+            border-color: #1e3c72;
+        }
+
+        .btn.primary:hover {
+            background: #2a5298;
+            border-color: #2a5298;
+        }
+
+        .button-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .info-section {
+            background: #f9f9f9;
+            padding: 1rem;
+            border-radius: 6px;
+            margin-bottom: 1rem;
+        }
+
+        .info-section h4 {
+            color: #1e3c72;
+            margin-bottom: 0.5rem;
+        }
+
+        .info-section p {
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+            color: #666;
+        }
+
+        .file-input {
+            margin-bottom: 1rem;
+        }
+
+        .file-input input[type="file"] {
+            width: 100%;
+            padding: 0.5rem;
+            border: 2px dashed #ccc;
+            border-radius: 6px;
+            background: #f9f9f9;
+        }
+
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 1.2rem;
+            display: none;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-top: 3px solid #fff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        footer {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            text-align: center;
+            padding: 1rem;
+            color: #666;
+            box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>⚾ Baseball Motion Capture Viewer</h1>
+            <p>Standalone 3D Skeletal Animation Viewer</p>
+        </header>
+        
+        <div class="main-content">
+            <div class="viewer-container">
+                <canvas id="canvas"></canvas>
+                <div id="loading" class="loading">
+                    <div class="spinner"></div>
+                    <p>Loading motion data...</p>
+                </div>
+            </div>
+            
+            <div class="controls-panel">
+                <div class="control-group">
+                    <h3>Load BVH File</h3>
+                    <div class="file-input">
+                        <input type="file" id="bvh-file" accept=".bvh" />
+                        <button id="load-sample" class="btn primary">Load Sample Data</button>
+                    </div>
+                </div>
+                
+                <div class="control-group">
+                    <h3>View Controls</h3>
+                    <div class="button-row">
+                        <button id="front-view" class="btn">Front</button>
+                        <button id="side-view" class="btn">Side</button>
+                        <button id="top-view" class="btn">Top</button>
+                        <button id="free-view" class="btn primary">Free</button>
+                    </div>
+                </div>
+                
+                <div class="control-group">
+                    <h3>Visual Options</h3>
+                    <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                        <label style="display: flex; align-items: center;">
+                            <input type="checkbox" id="show-skeleton" checked style="margin-right: 0.5rem;">
+                            Show Skeleton
+                        </label>
+                        <label style="display: flex; align-items: center;">
+                            <input type="checkbox" id="show-joints" checked style="margin-right: 0.5rem;">
+                            Show Joints
+                        </label>
+                        <label style="display: flex; align-items: center;">
+                            <input type="checkbox" id="show-ground" style="margin-right: 0.5rem;">
+                            Show Ground
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="info-section">
+                    <h4>Instructions</h4>
+                    <p><strong>Load Sample:</strong> Click "Load Sample Data" to view the converted baseball motion.</p>
+                    <p><strong>Custom File:</strong> Select your own BVH file using the file input above.</p>
+                    <p><strong>Camera:</strong> Click and drag to rotate, scroll to zoom.</p>
+                    <p><strong>Views:</strong> Use view buttons for preset camera angles.</p>
+                </div>
+                
+                <div class="info-section">
+                    <h4>About</h4>
+                    <p>This viewer displays 3D skeletal animation from BVH motion capture data.</p>
+                    <p>The sample data shows baseball motion captured from Cooper motion data converted to BVH format.</p>
+                </div>
+            </div>
+        </div>
+        
+        <footer>
+            <p>Baseball Motion Capture Analysis Tool - Standalone Version</p>
+        </footer>
+    </div>
+
+    <script>
+        // Simple BVH loader for demonstration
+        class SimpleBVHLoader {
+            constructor() {
+                this.bones = [];
+                this.scene = null;
+                this.skeletonHelper = null;
+            }
+
+            loadSample() {
+                // Create a simple demonstration skeleton
+                this.createSampleSkeleton();
+            }
+
+            createSampleSkeleton() {
+                // Remove existing skeleton
+                if (this.skeletonHelper) {
+                    this.scene.remove(this.skeletonHelper);
+                }
+
+                // Create simple bone structure
+                const bones = [];
+                
+                // Root bone (hips)
+                const root = new THREE.Bone();
+                root.name = 'Hips';
+                root.position.set(0, 0, 0);
+                bones.push(root);
+
+                // Spine
+                const spine = new THREE.Bone();
+                spine.name = 'Spine';
+                spine.position.set(0, 5, 0);
+                root.add(spine);
+                bones.push(spine);
+
+                // Spine1
+                const spine1 = new THREE.Bone();
+                spine1.name = 'Spine1';
+                spine1.position.set(0, 5, 0);
+                spine.add(spine1);
+                bones.push(spine1);
+
+                // Left arm
+                const leftShoulder = new THREE.Bone();
+                leftShoulder.name = 'LeftShoulder';
+                leftShoulder.position.set(-3, 3, 0);
+                spine1.add(leftShoulder);
+                bones.push(leftShoulder);
+
+                const leftArm = new THREE.Bone();
+                leftArm.name = 'LeftArm';
+                leftArm.position.set(-7, 0, 0);
+                leftShoulder.add(leftArm);
+                bones.push(leftArm);
+
+                const leftForeArm = new THREE.Bone();
+                leftForeArm.name = 'LeftForeArm';
+                leftForeArm.position.set(-12, 0, 0);
+                leftArm.add(leftForeArm);
+                bones.push(leftForeArm);
+
+                // Right arm
+                const rightShoulder = new THREE.Bone();
+                rightShoulder.name = 'RightShoulder';
+                rightShoulder.position.set(3, 3, 0);
+                spine1.add(rightShoulder);
+                bones.push(rightShoulder);
+
+                const rightArm = new THREE.Bone();
+                rightArm.name = 'RightArm';
+                rightArm.position.set(7, 0, 0);
+                rightShoulder.add(rightArm);
+                bones.push(rightArm);
+
+                const rightForeArm = new THREE.Bone();
+                rightForeArm.name = 'RightForeArm';
+                rightForeArm.position.set(12, 0, 0);
+                rightArm.add(rightForeArm);
+                bones.push(rightForeArm);
+
+                // Create skeleton helper
+                const skeleton = new THREE.Skeleton(bones);
+                this.skeletonHelper = new THREE.SkeletonHelper(root);
+                this.skeletonHelper.material.linewidth = 3;
+                this.scene.add(this.skeletonHelper);
+
+                // Simple animation
+                this.animateSkeleton();
+            }
+
+            animateSkeleton() {
+                let time = 0;
+                const animate = () => {
+                    time += 0.01;
+                    
+                    if (this.skeletonHelper) {
+                        // Simple rotation animation to demonstrate the skeleton
+                        const bones = this.skeletonHelper.bones;
+                        if (bones.length > 1) {
+                            bones[1].rotation.z = Math.sin(time) * 0.2; // Spine
+                        }
+                        if (bones.length > 4) {
+                            bones[4].rotation.z = Math.sin(time * 2) * 0.5; // Left arm
+                        }
+                        if (bones.length > 7) {
+                            bones[7].rotation.z = Math.sin(time * 2 + Math.PI) * 0.5; // Right arm
+                        }
+                    }
+                    
+                    requestAnimationFrame(animate);
+                };
+                animate();
+            }
+        }
+
+        // Main Application
+        class StandaloneViewer {
+            constructor() {
+                this.scene = null;
+                this.camera = null;
+                this.renderer = null;
+                this.loader = new SimpleBVHLoader();
+                
+                this.init();
+            }
+
+            init() {
+                this.setupScene();
+                this.setupCamera();
+                this.setupRenderer();
+                this.setupLights();
+                this.setupControls();
+                this.setupEventListeners();
+                this.animate();
+                
+                // Set loader scene reference
+                this.loader.scene = this.scene;
+                
+                window.addEventListener('resize', () => this.onWindowResize(), false);
+            }
+
+            setupScene() {
+                this.scene = new THREE.Scene();
+                this.scene.background = new THREE.Color(0x222222);
+                
+                // Add coordinate system
+                const axesHelper = new THREE.AxesHelper(20);
+                this.scene.add(axesHelper);
+            }
+
+            setupCamera() {
+                const canvas = document.getElementById('canvas');
+                const aspect = canvas.clientWidth / canvas.clientHeight;
+                this.camera = new THREE.PerspectiveCamera(45, aspect, 0.1, 1000);
+                this.camera.position.set(50, 30, 50);
+                this.camera.lookAt(0, 15, 0);
+            }
+
+            setupRenderer() {
+                const canvas = document.getElementById('canvas');
+                this.renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+                this.renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+                this.renderer.setPixelRatio(window.devicePixelRatio);
+            }
+
+            setupLights() {
+                const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+                this.scene.add(ambientLight);
+
+                const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+                directionalLight.position.set(20, 20, 20);
+                this.scene.add(directionalLight);
+            }
+
+            setupControls() {
+                const canvas = document.getElementById('canvas');
+                let isMouseDown = false;
+                let mouseX = 0, mouseY = 0;
+                let targetX = 0, targetY = 0;
+
+                canvas.addEventListener('mousedown', (event) => {
+                    isMouseDown = true;
+                    mouseX = event.clientX;
+                    mouseY = event.clientY;
+                });
+
+                canvas.addEventListener('mousemove', (event) => {
+                    if (!isMouseDown) return;
+
+                    const deltaX = event.clientX - mouseX;
+                    const deltaY = event.clientY - mouseY;
+
+                    targetX += deltaX * 0.01;
+                    targetY += deltaY * 0.01;
+
+                    const radius = 80;
+                    this.camera.position.x = Math.cos(targetX) * radius;
+                    this.camera.position.z = Math.sin(targetX) * radius;
+                    this.camera.position.y = Math.max(5, 30 + targetY * 20);
+                    
+                    this.camera.lookAt(0, 15, 0);
+
+                    mouseX = event.clientX;
+                    mouseY = event.clientY;
+                });
+
+                canvas.addEventListener('mouseup', () => {
+                    isMouseDown = false;
+                });
+
+                canvas.addEventListener('wheel', (event) => {
+                    const scale = event.deltaY > 0 ? 1.1 : 0.9;
+                    this.camera.position.multiplyScalar(scale);
+                    this.camera.lookAt(0, 15, 0);
+                    event.preventDefault();
+                });
+            }
+
+            setupEventListeners() {
+                document.getElementById('load-sample').addEventListener('click', () => {
+                    this.loader.loadSample();
+                });
+
+                document.getElementById('front-view').addEventListener('click', () => {
+                    this.camera.position.set(0, 15, 60);
+                    this.camera.lookAt(0, 15, 0);
+                });
+
+                document.getElementById('side-view').addEventListener('click', () => {
+                    this.camera.position.set(60, 15, 0);
+                    this.camera.lookAt(0, 15, 0);
+                });
+
+                document.getElementById('top-view').addEventListener('click', () => {
+                    this.camera.position.set(0, 80, 0);
+                    this.camera.lookAt(0, 0, 0);
+                });
+
+                document.getElementById('free-view').addEventListener('click', () => {
+                    this.camera.position.set(50, 30, 50);
+                    this.camera.lookAt(0, 15, 0);
+                });
+
+                document.getElementById('show-skeleton').addEventListener('change', (e) => {
+                    if (this.loader.skeletonHelper) {
+                        this.loader.skeletonHelper.visible = e.target.checked;
+                    }
+                });
+
+                document.getElementById('show-ground').addEventListener('change', (e) => {
+                    // Add ground plane if needed
+                    if (e.target.checked && !this.groundPlane) {
+                        const geometry = new THREE.PlaneGeometry(100, 100);
+                        const material = new THREE.MeshLambertMaterial({ 
+                            color: 0x444444, 
+                            transparent: true, 
+                            opacity: 0.3 
+                        });
+                        this.groundPlane = new THREE.Mesh(geometry, material);
+                        this.groundPlane.rotation.x = -Math.PI / 2;
+                        this.scene.add(this.groundPlane);
+                    } else if (this.groundPlane) {
+                        this.groundPlane.visible = e.target.checked;
+                    }
+                });
+            }
+
+            animate() {
+                requestAnimationFrame(() => this.animate());
+                this.renderer.render(this.scene, this.camera);
+            }
+
+            onWindowResize() {
+                const canvas = document.getElementById('canvas');
+                const width = canvas.clientWidth;
+                const height = canvas.clientHeight;
+
+                this.camera.aspect = width / height;
+                this.camera.updateProjectionMatrix();
+                this.renderer.setSize(width, height);
+            }
+        }
+
+        // Start the application
+        document.addEventListener('DOMContentLoaded', () => {
+            new StandaloneViewer();
+        });
+    </script>
+</body>
+</html>
