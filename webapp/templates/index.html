@@ -7,12 +7,71 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.7.7/dat.gui.min.js"></script>
+    <style>
+        /* Additional styles for JSON motion viewer */
+        .message {
+            margin: 10px 0;
+            padding: 10px 15px;
+            border-radius: 4px;
+            font-weight: bold;
+            animation: slideIn 0.3s ease-out;
+        }
+        
+        .message.error {
+            background: rgba(255, 0, 0, 0.1);
+            color: #d8000c;
+            border: 1px solid #d8000c;
+        }
+        
+        .message.success {
+            background: rgba(0, 255, 0, 0.1);
+            color: #008000;
+            border: 1px solid #008000;
+        }
+        
+        .message.info {
+            background: rgba(0, 123, 255, 0.1);
+            color: #007bff;
+            border: 1px solid #007bff;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .error-message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 0, 0, 0.9);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            max-width: 400px;
+            text-align: center;
+            z-index: 1000;
+            animation: fadeIn 0.5s ease-out;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+    </style>
 </head>
 <body>
     <div id="container">
         <header>
             <h1>⚾ Baseball Motion Capture Viewer</h1>
-            <p>3D Skeletal Animation from Cooper Motion Data</p>
+            <p>3D Skeletal Animation from Cooper Motion Data (JSON Format)</p>
         </header>
         
         <div id="main-content">
@@ -72,18 +131,18 @@
                 
                 <div class="control-group">
                     <h3>Actions</h3>
-                    <button id="convert-btn" class="btn secondary">🔄 Regenerate BVH</button>
+                    <button id="convert-btn" class="btn secondary">🔄 Regenerate BVH (Legacy)</button>
                     <button id="export-btn" class="btn secondary">💾 Export Data</button>
                 </div>
             </div>
         </div>
         
         <footer>
-            <p>Baseball Motion Capture Analysis Tool - Built with Three.js</p>
+            <p>Baseball Motion Capture Analysis Tool - Built with Three.js & JSON Motion Data</p>
         </footer>
     </div>
     
-    <script src="{{ url_for('static', filename='js/bvh-loader.js') }}"></script>
+    <!-- No longer need BVH loader - using direct JSON -->
     <script src="{{ url_for('static', filename='js/motion-viewer.js') }}"></script>
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
