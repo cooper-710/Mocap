@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: mocap-visualizer
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn -w 4 -b 0.0.0.0:$PORT webapp.app:app
+    envVars:
+      - key: FLASK_APP
+        value: webapp/app.py
+      - key: FLASK_ENV
+        value: production
+      - key: PORT
+        value: 5000
