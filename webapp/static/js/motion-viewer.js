@@ -12,7 +12,6 @@ class MotionViewer {
         this.scene = null;
         this.camera = null;
         this.renderer = null;
-        this.controls = null;
 
         // Animation data
         this.motionData = null;
@@ -24,13 +23,12 @@ class MotionViewer {
         this.lastFrameTime = 0;
 
         // Skeleton
-        this.gltfSkeleton = null;   // The anatomical skeleton model
-        this.boneMap = {};          // Map mocap joint names → skeleton bone objects
+        this.gltfSkeleton = null;   // Loaded anatomical skeleton
+        this.boneMap = {};          // Mocap joint → GLTF bone mapping
 
         // Ground
         this.groundPlane = null;
 
-        // Clock for animation
         this.clock = new THREE.Clock();
 
         this.init();
@@ -46,7 +44,7 @@ class MotionViewer {
         this.setupControls();
         this.setupGround();
 
-        // Load the anatomical skeleton
+        // Load GLTF skeleton
         this.loadGLTFSkeleton();
 
         // Start render loop
@@ -59,6 +57,7 @@ class MotionViewer {
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color(0x222222);
 
+        // Debug axes
         const axesHelper = new THREE.AxesHelper(50);
         this.scene.add(axesHelper);
     }
@@ -157,14 +156,16 @@ class MotionViewer {
 
     loadGLTFSkeleton() {
         const loader = new GLTFLoader();
-        loader.load('/static/models/skeleton.glb', (gltf) => {
+        console.log("Loading GLTF skeleton from /static/models/scene.gltf");
+
+        loader.load('/static/models/scene.gltf', (gltf) => {
             this.gltfSkeleton = gltf.scene;
 
-            // Scale & position
+            // Scale & position (adjust if mocap scale differs)
             this.gltfSkeleton.scale.set(0.01, 0.01, 0.01);
             this.gltfSkeleton.position.set(0, 0, 0);
 
-            // Optional glow
+            // Optional glow for debugging
             this.gltfSkeleton.traverse((child) => {
                 if (child.isMesh) {
                     child.material.emissive = new THREE.Color(0x00ffff);
@@ -174,13 +175,14 @@ class MotionViewer {
 
             this.scene.add(this.gltfSkeleton);
 
-            // Build bone map (so we can animate bones later)
+            // Build bone map
             this.gltfSkeleton.traverse((bone) => {
                 if (bone.isBone) {
                     this.boneMap[bone.name] = bone;
                 }
             });
 
+            console.log("Skeleton loaded. Bones found:", Object.keys(this.boneMap));
         }, undefined, (error) => {
             console.error('Error loading GLTF skeleton:', error);
         });
@@ -239,15 +241,29 @@ class MotionViewer {
     updateSkeleton(frameData) {
         if (!this.gltfSkeleton || !frameData) return;
 
-        // TODO: Map mocap joints → skeleton bones here
-        // Example (replace with your actual joint/bone names):
-        /*
-        const hip = this.boneMap['Hips'];
-        const mocapHip = frameData['HipCenter'];
-        if (hip && mocapHip) {
-            hip.position.set(mocapHip.x, mocapHip.y, mocapHip.z);
+        // Map mocap joints → GLTF bones here
+        const jointToBoneMap = {
+            'HipCenter': 'Hips',
+            'LeftShoulder': 'Humerus_L',
+            'RightShoulder': 'Humerus_R',
+            // Add all mappings as needed
+        };
+
+        for (const [jointName, boneName] of Object.entries(jointToBoneMap)) {
+            const bone = this.boneMap[boneName];
+            const data = frameData[jointName];
+
+            if (bone && data) {
+                bone.position.set(data.x, data.y, data.z);
+                if (data.rx !== undefined) {
+                    bone.rotation.set(
+                        THREE.MathUtils.degToRad(data.rx),
+                        THREE.MathUtils.degToRad(data.ry),
+                        THREE.MathUtils.degToRad(data.rz)
+                    );
+                }
+            }
         }
-        */
     }
 
     /* ---------------- Playback ---------------- */
