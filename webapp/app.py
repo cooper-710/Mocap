@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Baseball Motion Capture Web Application
-Displays 3D skeletal animation from JSON motion data (converted from TXT files)
+Displays 3D skeletal animation from JSON motion data (converted from CSV files)
 
 Author: AI Assistant
 """
@@ -10,7 +10,7 @@ from flask import Flask, render_template, send_file, jsonify, request
 import os
 import json
 import sys
-from data_parser import create_parser_from_files
+from csv_data_parser import create_csv_parser_from_files
 
 app = Flask(__name__)
 
@@ -32,20 +32,20 @@ def viewer():
 def get_motion_data():
     """Get complete motion data as JSON (replaces /api/bvh)"""
     try:
-        # Define file paths
-        joint_centers_file = os.path.join(app.config['MOCAP_DATA_PATH'], 'jointcenterscooper.txt')
-        joint_rotations_file = os.path.join(app.config['MOCAP_DATA_PATH'], 'jointrotationscooper.txt')
+        # Define file paths - now using CSV files
+        joint_centers_file = os.path.join(app.config['MOCAP_DATA_PATH'], 'joint_centers.csv')
+        joint_rotations_file = os.path.join(app.config['MOCAP_DATA_PATH'], 'joint_rotations.csv')
         
         # Check if files exist
         if not os.path.exists(joint_centers_file):
-            return jsonify({'error': f'Joint centers file not found: {joint_centers_file}'}), 404
+            return jsonify({'error': f'Joint centers CSV file not found: {joint_centers_file}'}), 404
         
         if not os.path.exists(joint_rotations_file):
-            return jsonify({'error': f'Joint rotations file not found: {joint_rotations_file}'}), 404
+            return jsonify({'error': f'Joint rotations CSV file not found: {joint_rotations_file}'}), 404
         
-        # Create data parser and load motion data
+        # Create CSV data parser and load motion data
         debug_mode = request.args.get('debug', 'false').lower() == 'true'
-        parser = create_parser_from_files(joint_centers_file, joint_rotations_file, debug=debug_mode)
+        parser = create_csv_parser_from_files(joint_centers_file, joint_rotations_file, debug=debug_mode)
         
         # Convert to JSON format
         motion_data = parser.to_json_format()
@@ -64,16 +64,16 @@ def get_motion_data():
 def get_motion_summary():
     """Get motion data summary without full frame data (for quick info)"""
     try:
-        # Define file paths
-        joint_centers_file = os.path.join(app.config['MOCAP_DATA_PATH'], 'jointcenterscooper.txt')
-        joint_rotations_file = os.path.join(app.config['MOCAP_DATA_PATH'], 'jointrotationscooper.txt')
+        # Define file paths - now using CSV files
+        joint_centers_file = os.path.join(app.config['MOCAP_DATA_PATH'], 'joint_centers.csv')
+        joint_rotations_file = os.path.join(app.config['MOCAP_DATA_PATH'], 'joint_rotations.csv')
         
         # Check if files exist
         if not os.path.exists(joint_centers_file) or not os.path.exists(joint_rotations_file):
-            return jsonify({'error': 'Motion capture data files not found'}), 404
+            return jsonify({'error': 'Motion capture CSV data files not found'}), 404
         
-        # Create parser and get summary
-        parser = create_parser_from_files(joint_centers_file, joint_rotations_file, debug=False)
+        # Create CSV parser and get summary
+        parser = create_csv_parser_from_files(joint_centers_file, joint_rotations_file, debug=False)
         summary = parser.get_motion_summary()
         
         if 'error' in summary:
@@ -88,12 +88,12 @@ def get_motion_summary():
 def get_motion_frame(frame_number):
     """Get data for a specific frame"""
     try:
-        # Define file paths
-        joint_centers_file = os.path.join(app.config['MOCAP_DATA_PATH'], 'jointcenterscooper.txt')
-        joint_rotations_file = os.path.join(app.config['MOCAP_DATA_PATH'], 'jointrotationscooper.txt')
+        # Define file paths - now using CSV files
+        joint_centers_file = os.path.join(app.config['MOCAP_DATA_PATH'], 'joint_centers.csv')
+        joint_rotations_file = os.path.join(app.config['MOCAP_DATA_PATH'], 'joint_rotations.csv')
         
-        # Create parser
-        parser = create_parser_from_files(joint_centers_file, joint_rotations_file, debug=False)
+        # Create CSV parser
+        parser = create_csv_parser_from_files(joint_centers_file, joint_rotations_file, debug=False)
         
         # Get specific frame
         frame_data = parser.get_frame_data(frame_number)
@@ -129,22 +129,17 @@ def convert_mocap():
         from mocap_to_bvh import BVHConverter
         
         converter = BVHConverter()
-        joint_centers_file = os.path.join(app.config['MOCAP_DATA_PATH'], 'jointcenterscooper.txt')
-        joint_rotations_file = os.path.join(app.config['MOCAP_DATA_PATH'], 'jointrotationscooper.txt')
+        joint_centers_file = os.path.join(app.config['MOCAP_DATA_PATH'], 'joint_centers.csv')
+        joint_rotations_file = os.path.join(app.config['MOCAP_DATA_PATH'], 'joint_rotations.csv')
         
         if not os.path.exists(joint_centers_file) or not os.path.exists(joint_rotations_file):
-            return jsonify({'error': 'Mocap data files not found'}), 404
+            return jsonify({'error': 'Mocap CSV data files not found'}), 404
         
-        converter.load_mocap_data(joint_centers_file, joint_rotations_file)
-        
-        output_file = os.path.join(app.config['MOCAP_DATA_PATH'], 'cooper_baseball_motion.bvh')
-        converter.write_bvh(output_file)
-        
+        # Note: This would need to be updated to handle CSV files
+        # For now, just return a message
         return jsonify({
-            'success': True,
-            'message': 'BVH file generated successfully',
-            'file': output_file,
-            'frames': len(converter.frames),
+            'success': False,
+            'message': 'CSV to BVH conversion not yet implemented. Use JSON motion data instead.',
             'note': 'BVH generation is deprecated. Use JSON motion data instead.'
         })
         
@@ -155,9 +150,9 @@ def convert_mocap():
 def health_check():
     """Health check endpoint"""
     try:
-        # Check if motion data files are accessible
-        joint_centers_file = os.path.join(app.config['MOCAP_DATA_PATH'], 'jointcenterscooper.txt')
-        joint_rotations_file = os.path.join(app.config['MOCAP_DATA_PATH'], 'jointrotationscooper.txt')
+        # Check if motion data files are accessible - now using CSV files
+        joint_centers_file = os.path.join(app.config['MOCAP_DATA_PATH'], 'joint_centers.csv')
+        joint_rotations_file = os.path.join(app.config['MOCAP_DATA_PATH'], 'joint_rotations.csv')
         
         centers_exists = os.path.exists(joint_centers_file)
         rotations_exists = os.path.exists(joint_rotations_file)
@@ -165,11 +160,12 @@ def health_check():
         return jsonify({
             'status': 'healthy',
             'data_files': {
-                'joint_centers': centers_exists,
-                'joint_rotations': rotations_exists
+                'joint_centers_csv': centers_exists,
+                'joint_rotations_csv': rotations_exists
             },
-            'api_version': '2.0',
-            'format': 'JSON'
+            'api_version': '3.0',
+            'format': 'JSON',
+            'data_source': 'CSV'
         })
     except Exception as e:
         return jsonify({
@@ -178,12 +174,13 @@ def health_check():
         }), 500
 
 if __name__ == '__main__':
-    print("Starting Baseball Motion Capture Web Application...")
+    print("Starting Baseball Motion Capture Web Application (CSV Version)...")
     print("New Features:")
-    print("- JSON-based motion data API at /api/motion-data")
+    print("- CSV-based motion data API at /api/motion-data")
     print("- Frame-specific data at /api/motion-frame/<frame_number>")
     print("- Motion summary at /api/motion-summary")
     print("- Health check at /api/health")
+    print("- Data source: CSV files")
     print("")
     print("Access the application at: http://localhost:5000")
     port = int(os.environ.get('PORT', 5000))
