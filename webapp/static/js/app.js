@@ -1,289 +1,337 @@
 /**
- * Main Application JavaScript
- * Handles UI interactions and coordinates the motion viewer with JSON motion data
+ * Main Application Controller
+ * Coordinates CSV upload and motion visualization
  */
 
-class BaseballMotionApp {
+class MotionCaptureApp {
     constructor() {
-        this.viewer = null;
-        this.motionData = null;
-        this.updateInterval = null;
+        this.csvUploader = null;
+        this.motionViewer = null;
+        this.isInitialized = false;
         
         this.init();
     }
-
+    
     init() {
-        // Initialize the 3D viewer
-        this.viewer = new MotionViewer('threejs-canvas');
-        
-        // Setup UI event listeners
-        this.setupEventListeners();
-        
-        // Load motion data
-        this.loadMotionData();
-    }
-
-    setupEventListeners() {
-        // Animation controls
-        document.getElementById('play-btn').addEventListener('click', () => this.play());
-        document.getElementById('pause-btn').addEventListener('click', () => this.pause());
-        document.getElementById('reset-btn').addEventListener('click', () => this.reset());
-        
-        // Frame slider
-        const frameSlider = document.getElementById('frame-slider');
-        frameSlider.addEventListener('input', (e) => this.setFrame(parseInt(e.target.value)));
-        
-        // Speed slider
-        const speedSlider = document.getElementById('speed-slider');
-        speedSlider.addEventListener('input', (e) => {
-            const speed = parseFloat(e.target.value);
-            this.setSpeed(speed);
-            document.getElementById('speed-display').textContent = speed.toFixed(1);
-        });
-        
-        // View controls
-        document.getElementById('front-view').addEventListener('click', () => this.setView('front'));
-        document.getElementById('side-view').addEventListener('click', () => this.setView('side'));
-        document.getElementById('top-view').addEventListener('click', () => this.setView('top'));
-        document.getElementById('free-view').addEventListener('click', () => this.setView('free'));
-        
-        // Visibility toggles
-        document.getElementById('show-skeleton').addEventListener('change', (e) => {
-            this.viewer.toggleSkeleton(e.target.checked);
-        });
-        
-        document.getElementById('show-joints').addEventListener('change', (e) => {
-            this.viewer.toggleJoints(e.target.checked);
-        });
-        
-        document.getElementById('show-ground').addEventListener('change', (e) => {
-            this.viewer.toggleGround(e.target.checked);
-        });
-        
-        document.getElementById('show-trajectory').addEventListener('change', (e) => {
-            // TODO: Implement trajectory visualization
-            console.log('Trajectory toggle:', e.target.checked);
-        });
-        
-        // Action buttons
-        document.getElementById('convert-btn').addEventListener('click', () => this.regenerateBVH());
-        document.getElementById('export-btn').addEventListener('click', () => this.exportData());
-        
-        // Start UI update loop
-        this.startUIUpdates();
-    }
-
-    async loadMotionData() {
-        try {
-            this.viewer.showLoading();
-            
-            // Load JSON motion data directly from the new API
-            this.motionData = await this.viewer.loadMotionData('/api/motion-data');
-            
-            if (this.motionData.error) {
-                throw new Error(this.motionData.error);
-            }
-            
-            // Update UI with motion info
-            this.updateMotionInfo();
-            
-            // Update frame slider
-            const frameSlider = document.getElementById('frame-slider');
-            frameSlider.max = this.motionData.totalFrames - 1;
-            frameSlider.value = 0;
-            
-            console.log('Motion data loaded successfully:', {
-                joints: this.motionData.jointNames.length,
-                bones: this.motionData.boneConnections.length,
-                frames: this.motionData.totalFrames,
-                duration: this.motionData.duration
-            });
-            
-        } catch (error) {
-            console.error('Error loading motion data:', error);
-            this.showMessage('Failed to load motion data: ' + error.message, 'error');
-        }
-    }
-
-    updateMotionInfo() {
-        if (!this.motionData) return;
-        
-        document.getElementById('duration').textContent = this.motionData.duration.toFixed(2);
-        document.getElementById('fps').textContent = this.motionData.fps.toFixed(1);
-        document.getElementById('total-frames-info').textContent = this.motionData.totalFrames;
-        document.getElementById('total-frames').textContent = this.motionData.totalFrames;
-    }
-
-    play() {
-        this.viewer.play();
-        this.updatePlayButton(true);
-    }
-
-    pause() {
-        this.viewer.pause();
-        this.updatePlayButton(false);
-    }
-
-    reset() {
-        this.viewer.stop();
-        this.setFrame(0);
-        this.updatePlayButton(false);
-    }
-
-    setFrame(frameNumber) {
-        this.viewer.setFrame(frameNumber);
-        document.getElementById('frame-display').textContent = frameNumber;
-        document.getElementById('frame-slider').value = frameNumber;
-    }
-
-    setSpeed(speed) {
-        this.viewer.setSpeed(speed);
-    }
-
-    setView(viewMode) {
-        this.viewer.setViewMode(viewMode);
-        
-        // Update button states
-        document.querySelectorAll('#controls-panel .control-group:nth-child(2) .btn').forEach(btn => {
-            btn.classList.remove('primary');
-        });
-        document.getElementById(viewMode + '-view').classList.add('primary');
-    }
-
-    updatePlayButton(isPlaying) {
-        const playBtn = document.getElementById('play-btn');
-        if (isPlaying) {
-            playBtn.textContent = '⏸ Playing';
-            playBtn.classList.remove('primary');
+        // Wait for DOM to be ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => this.initialize());
         } else {
-            playBtn.textContent = '▶ Play';
-            playBtn.classList.add('primary');
+            this.initialize();
         }
     }
-
-    async regenerateBVH() {
-        try {
-            const convertBtn = document.getElementById('convert-btn');
-            const originalText = convertBtn.textContent;
-            convertBtn.textContent = '🔄 Converting...';
-            convertBtn.disabled = true;
-            
-            const response = await fetch('/api/convert-mocap', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            });
-            
-            const result = await response.json();
-            
-            if (result.error) {
-                throw new Error(result.error);
-            }
-            
-            this.showMessage('BVH file regenerated successfully! Note: This app now uses JSON data directly.', 'success');
-            
-        } catch (error) {
-            console.error('Error regenerating BVH:', error);
-            this.showMessage('Failed to regenerate BVH: ' + error.message, 'error');
-        } finally {
-            const convertBtn = document.getElementById('convert-btn');
-            convertBtn.textContent = '🔄 Regenerate BVH (Legacy)';
-            convertBtn.disabled = false;
-        }
-    }
-
-    exportData() {
-        // Export the JSON motion data instead of BVH info
-        if (!this.motionData) {
-            this.showMessage('No motion data available to export', 'error');
+    
+    initialize() {
+        console.log('Initializing Baseball Motion Capture App...');
+        
+        // Get CSV uploader instance (created by csv-uploader.js)
+        this.csvUploader = window.csvUploader;
+        
+        if (!this.csvUploader) {
+            console.error('CSV uploader not found');
             return;
         }
         
-        const exportData = {
-            motion_info: {
-                joints: this.motionData.jointNames.length,
-                bones: this.motionData.boneConnections.length,
-                frames: this.motionData.totalFrames,
-                duration: this.motionData.duration,
-                frameRate: this.motionData.frameRate
-            },
-            joint_names: this.motionData.jointNames,
-            bone_connections: this.motionData.boneConnections,
-            current_frame: this.viewer.getCurrentFrame(),
-            total_frames: this.viewer.getTotalFrames(),
-            sample_frame_data: this.motionData.frames[this.viewer.getCurrentFrame()],
-            timestamp: new Date().toISOString(),
-            format: 'JSON Motion Data'
+        // Override the CSV uploader's motion viewer initialization
+        const originalInitializeMotionViewer = this.csvUploader.initializeMotionViewer.bind(this.csvUploader);
+        this.csvUploader.initializeMotionViewer = async () => {
+            return await this.initializeMotionViewer();
         };
         
-        const blob = new Blob([JSON.stringify(exportData, null, 2)], {
-            type: 'application/json'
+        // Setup additional UI handlers
+        this.setupUIHandlers();
+        
+        this.isInitialized = true;
+        console.log('App initialized successfully');
+    }
+    
+    async initializeMotionViewer() {
+        try {
+            const motionViewerContainer = document.getElementById('motion-viewer');
+            
+            if (!motionViewerContainer) {
+                throw new Error('Motion viewer container not found');
+            }
+            
+            // Clear any existing content
+            motionViewerContainer.innerHTML = '';
+            
+            // Create motion viewer
+            this.motionViewer = new MotionViewer(motionViewerContainer);
+            
+            // Load motion data
+            const success = await this.motionViewer.loadMotionData();
+            
+            if (success) {
+                // Connect motion controls
+                this.connectMotionControls();
+                console.log('Motion viewer initialized successfully');
+                return true;
+            } else {
+                throw new Error('Failed to load motion data');
+            }
+            
+        } catch (error) {
+            console.error('Error initializing motion viewer:', error);
+            
+            const motionViewerContainer = document.getElementById('motion-viewer');
+            if (motionViewerContainer) {
+                motionViewerContainer.innerHTML = `
+                    <div style="
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        height: 100%;
+                        color: #dc3545;
+                        text-align: center;
+                        padding: 20px;
+                    ">
+                        <div>
+                            <div style="font-size: 2em; margin-bottom: 10px;">⚠️</div>
+                            <div>Failed to initialize motion viewer</div>
+                            <div style="font-size: 0.9em; margin-top: 10px; opacity: 0.7;">
+                                ${error.message}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            return false;
+        }
+    }
+    
+    connectMotionControls() {
+        if (!this.motionViewer) {
+            console.warn('Motion viewer not available for connecting controls');
+            return;
+        }
+        
+        // Play/Pause/Reset buttons
+        const playBtn = document.getElementById('play-btn');
+        const pauseBtn = document.getElementById('pause-btn');
+        const resetBtn = document.getElementById('reset-btn');
+        
+        if (playBtn) {
+            playBtn.addEventListener('click', () => {
+                this.motionViewer.play();
+                this.updateButtonStates(true);
+            });
+        }
+        
+        if (pauseBtn) {
+            pauseBtn.addEventListener('click', () => {
+                this.motionViewer.pause();
+                this.updateButtonStates(false);
+            });
+        }
+        
+        if (resetBtn) {
+            resetBtn.addEventListener('click', () => {
+                this.motionViewer.reset();
+                this.updateButtonStates(false);
+                this.updateFrameDisplay(0);
+            });
+        }
+        
+        // Frame slider
+        const frameSlider = document.getElementById('frame-slider');
+        const frameDisplay = document.getElementById('frame-display');
+        
+        if (frameSlider && this.motionViewer.getTotalFrames) {
+            const totalFrames = this.motionViewer.getTotalFrames();
+            frameSlider.max = totalFrames - 1;
+            frameSlider.value = 0;
+            
+            if (frameDisplay) {
+                frameDisplay.textContent = `0 / ${totalFrames}`;
+            }
+            
+            frameSlider.addEventListener('input', (e) => {
+                const frame = parseInt(e.target.value);
+                this.motionViewer.setFrame(frame);
+                this.updateFrameDisplay(frame);
+                
+                // Pause animation when manually scrubbing
+                this.motionViewer.pause();
+                this.updateButtonStates(false);
+            });
+        }
+        
+        // Speed slider
+        const speedSlider = document.getElementById('speed-slider');
+        const speedDisplay = document.getElementById('speed-display');
+        
+        if (speedSlider) {
+            speedSlider.addEventListener('input', (e) => {
+                const speed = parseFloat(e.target.value);
+                this.motionViewer.setSpeed(speed);
+                
+                if (speedDisplay) {
+                    speedDisplay.textContent = `${speed.toFixed(1)}x`;
+                }
+            });
+        }
+        
+        // Override the motion viewer's frame change callback
+        this.motionViewer.onFrameChanged = (frameIndex) => {
+            this.updateFrameDisplay(frameIndex);
+            
+            // Update frame slider without triggering its event
+            if (frameSlider) {
+                frameSlider.value = frameIndex;
+            }
+        };
+        
+        console.log('Motion controls connected');
+    }
+    
+    updateButtonStates(isPlaying) {
+        const playBtn = document.getElementById('play-btn');
+        const pauseBtn = document.getElementById('pause-btn');
+        
+        if (playBtn && pauseBtn) {
+            if (isPlaying) {
+                playBtn.classList.remove('active');
+                pauseBtn.classList.add('active');
+            } else {
+                playBtn.classList.add('active');
+                pauseBtn.classList.remove('active');
+            }
+        }
+    }
+    
+    updateFrameDisplay(frameIndex) {
+        const frameDisplay = document.getElementById('frame-display');
+        if (frameDisplay && this.motionViewer) {
+            const totalFrames = this.motionViewer.getTotalFrames();
+            frameDisplay.textContent = `${frameIndex} / ${totalFrames}`;
+        }
+    }
+    
+    setupUIHandlers() {
+        // Add keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (!this.motionViewer) return;
+            
+            switch (e.code) {
+                case 'Space':
+                    e.preventDefault();
+                    if (this.motionViewer.isPlaying) {
+                        this.motionViewer.pause();
+                        this.updateButtonStates(false);
+                    } else {
+                        this.motionViewer.play();
+                        this.updateButtonStates(true);
+                    }
+                    break;
+                    
+                case 'ArrowLeft':
+                    e.preventDefault();
+                    if (e.ctrlKey || e.metaKey) {
+                        this.motionViewer.reset();
+                        this.updateButtonStates(false);
+                        this.updateFrameDisplay(0);
+                    } else {
+                        const currentFrame = this.motionViewer.getCurrentFrame();
+                        const newFrame = Math.max(0, currentFrame - 1);
+                        this.motionViewer.setFrame(newFrame);
+                        this.updateFrameDisplay(newFrame);
+                    }
+                    break;
+                    
+                case 'ArrowRight':
+                    e.preventDefault();
+                    const currentFrame = this.motionViewer.getCurrentFrame();
+                    const totalFrames = this.motionViewer.getTotalFrames();
+                    const newFrame = Math.min(totalFrames - 1, currentFrame + 1);
+                    this.motionViewer.setFrame(newFrame);
+                    this.updateFrameDisplay(newFrame);
+                    break;
+            }
         });
         
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'baseball_motion_data.json';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        // Add view controls if they exist
+        const frontViewBtn = document.getElementById('front-view');
+        const sideViewBtn = document.getElementById('side-view');
+        const topViewBtn = document.getElementById('top-view');
+        const freeViewBtn = document.getElementById('free-view');
         
-        this.showMessage('Motion data exported successfully!', 'success');
+        if (frontViewBtn) frontViewBtn.addEventListener('click', () => this.motionViewer?.setView('front'));
+        if (sideViewBtn) sideViewBtn.addEventListener('click', () => this.motionViewer?.setView('side'));
+        if (topViewBtn) topViewBtn.addEventListener('click', () => this.motionViewer?.setView('top'));
+        if (freeViewBtn) freeViewBtn.addEventListener('click', () => this.motionViewer?.setView('free'));
+        
+        // Add visibility toggles if they exist
+        const skeletonToggle = document.getElementById('show-skeleton');
+        const jointsToggle = document.getElementById('show-joints');
+        const groundToggle = document.getElementById('show-ground');
+        
+        if (skeletonToggle) {
+            skeletonToggle.addEventListener('change', (e) => {
+                if (this.motionViewer) {
+                    this.motionViewer.showSkeleton = e.target.checked;
+                    this.motionViewer.toggleSkeleton();
+                }
+            });
+        }
+        
+        if (jointsToggle) {
+            jointsToggle.addEventListener('change', (e) => {
+                if (this.motionViewer) {
+                    this.motionViewer.showJoints = e.target.checked;
+                    this.motionViewer.toggleJoints();
+                }
+            });
+        }
+        
+        if (groundToggle) {
+            groundToggle.addEventListener('change', (e) => {
+                if (this.motionViewer) {
+                    this.motionViewer.showGround = e.target.checked;
+                    this.motionViewer.toggleGround();
+                }
+            });
+        }
+        
+        console.log('UI handlers setup complete');
     }
-
-    startUIUpdates() {
-        this.updateInterval = setInterval(() => {
-            if (this.viewer) {
-                const currentFrame = this.viewer.getCurrentFrame();
-                const isPlaying = this.viewer.getIsPlaying();
-                
-                // Update frame display
-                document.getElementById('frame-display').textContent = currentFrame;
-                document.getElementById('frame-slider').value = currentFrame;
-                
-                // Update play button state
-                this.updatePlayButton(isPlaying);
-            }
-        }, 100); // Update every 100ms
+    
+    // Public API methods
+    reset() {
+        if (this.motionViewer) {
+            this.motionViewer.dispose();
+            this.motionViewer = null;
+        }
+        
+        if (this.csvUploader) {
+            this.csvUploader.reset();
+        }
+        
+        this.updateButtonStates(false);
     }
-
-    showMessage(text, type = 'info') {
-        // Remove existing messages
-        const existingMessages = document.querySelectorAll('.message');
-        existingMessages.forEach(msg => msg.remove());
-        
-        // Create new message
-        const message = document.createElement('div');
-        message.className = `message ${type}`;
-        message.textContent = text;
-        
-        // Style the message
-        message.style.cssText = `
-            margin: 10px 0;
-            padding: 10px 15px;
-            border-radius: 4px;
-            font-weight: bold;
-            ${type === 'error' ? 'background: rgba(255, 0, 0, 0.1); color: #d8000c; border: 1px solid #d8000c;' : ''}
-            ${type === 'success' ? 'background: rgba(0, 255, 0, 0.1); color: #008000; border: 1px solid #008000;' : ''}
-            ${type === 'info' ? 'background: rgba(0, 123, 255, 0.1); color: #007bff; border: 1px solid #007bff;' : ''}
-        `;
-        
-        // Insert at the top of controls panel
-        const controlsPanel = document.getElementById('controls-panel');
-        controlsPanel.insertBefore(message, controlsPanel.firstChild);
-        
-        // Auto-remove after 5 seconds
-        setTimeout(() => {
-            if (message.parentNode) {
-                message.remove();
-            }
-        }, 5000);
+    
+    getMotionViewer() {
+        return this.motionViewer;
+    }
+    
+    getCSVUploader() {
+        return this.csvUploader;
     }
 }
 
-// Initialize the application when the page loads
-document.addEventListener('DOMContentLoaded', () => {
-    window.baseballApp = new BaseballMotionApp();
-});
+// Initialize the application
+const app = new MotionCaptureApp();
+
+// Make app globally available for debugging
+window.motionCaptureApp = app;
+
+// Add some helpful keyboard shortcut info
+console.log('Baseball Motion Capture App loaded!');
+console.log('Keyboard shortcuts:');
+console.log('  Space: Play/Pause');
+console.log('  ← →: Previous/Next frame');
+console.log('  Ctrl+←: Reset to first frame');
+
+// Export for use in other modules
+window.MotionCaptureApp = MotionCaptureApp;

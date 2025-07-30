@@ -1,18 +1,22 @@
 #!/usr/bin/env python3
 """
-Motion Capture Data Parser
-Parses Cooper TXT files and provides structured motion data for JSON API
+Motion Capture CSV Data Parser
+Parses CSV files containing joint centers and rotations data for 3D motion visualization
 
 This module handles:
-- Parsing joint centers and rotations from TXT files
+- Parsing joint centers and rotations from CSV files
 - Defining anatomical joint names and bone connections
-- Converting coordinate systems (TXT → Three.js)
+- Converting coordinate systems (CSV → Three.js)
 - Providing frame-by-frame motion data
+- CSV file validation and error handling
 """
 
 import math
 import os
-from typing import List, Dict, Tuple, Any
+import pandas as pd
+import numpy as np
+from typing import List, Dict, Tuple, Any, Optional
+from io import StringIO
 
 # Define the anatomical joint structure
 JOINT_NAMES = [
@@ -92,126 +96,210 @@ JOINT_OFFSETS = {
 }
 
 
-class DataParser:
-    """Parser for Cooper motion capture TXT files"""
+class CSVDataParser:
+    """Parser for motion capture CSV files"""
     
     def __init__(self, debug_mode=False):
         self.debug_mode = debug_mode
-        self.joint_centers_data = []
-        self.joint_rotations_data = []
+        self.joint_centers_df = None
+        self.joint_rotations_df = None
         self.frame_rate = 30.0  # Default 30 FPS
+        self.uploaded_files = {}
         
-    def load_txt_file(self, filename: str) -> List[List[float]]:
-        """Load numeric data from text file, skipping header"""
-        if not os.path.exists(filename):
-            raise FileNotFoundError(f"File not found: {filename}")
+    def validate_csv_file(self, file_content: str, file_type: str) -> Dict[str, Any]:
+        """Validate CSV file format and structure"""
+        try:
+            # Try to parse the CSV content
+            df = pd.read_csv(StringIO(file_content))
             
-        data = []
-        with open(filename, 'r') as f:
-            lines = f.readlines()
-            for i, line in enumerate(lines[1:], 1):  # Skip header
-                try:
-                    values = [float(x) for x in line.strip().split()]
-                    if values:  # Skip empty lines
-                        data.append(values)
-                except ValueError as e:
-                    if self.debug_mode:
-                        print(f"Warning: Could not parse line {i}: {e}")
-                    continue
-        return data
+            if df.empty:
+                return {"valid": False, "error": f"{file_type} CSV file is empty"}
+            
+            # Check for minimum required columns
+            min_cols = 3  # At least X, Y, Z coordinates
+            if len(df.columns) < min_cols:
+                return {
+                    "valid": False, 
+                    "error": f"{file_type} CSV must have at least {min_cols} columns (X, Y, Z coordinates)"
+                }
+            
+            # Check for numeric data
+            numeric_cols = df.select_dtypes(include=[np.number]).columns
+            if len(numeric_cols) == 0:
+                return {
+                    "valid": False,
+                    "error": f"{file_type} CSV must contain numeric data"
+                }
+            
+            return {
+                "valid": True,
+                "rows": len(df),
+                "columns": len(df.columns),
+                "numeric_columns": len(numeric_cols),
+                "preview": df.head(3).to_dict('records') if len(df) > 0 else []
+            }
+            
+        except pd.errors.EmptyDataError:
+            return {"valid": False, "error": f"{file_type} CSV file is empty"}
+        except pd.errors.ParserError as e:
+            return {"valid": False, "error": f"Failed to parse {file_type} CSV: {str(e)}"}
+        except Exception as e:
+            return {"valid": False, "error": f"Error validating {file_type} CSV: {str(e)}"}
     
-    def load_motion_data(self, joint_centers_file: str, joint_rotations_file: str):
-        """Load motion capture data from TXT files"""
+    def load_csv_from_content(self, file_content: str, file_type: str) -> pd.DataFrame:
+        """Load CSV data from file content string"""
+        try:
+            df = pd.read_csv(StringIO(file_content))
+            
+            if self.debug_mode:
+                print(f"Loaded {file_type} CSV: {len(df)} rows, {len(df.columns)} columns")
+                print(f"Columns: {list(df.columns)}")
+            
+            return df
+            
+        except Exception as e:
+            raise ValueError(f"Failed to load {file_type} CSV: {str(e)}")
+    
+    def store_uploaded_files(self, centers_content: str, rotations_content: str):
+        """Store uploaded CSV file contents"""
+        self.uploaded_files['centers'] = centers_content
+        self.uploaded_files['rotations'] = rotations_content
+        
+        # Load the dataframes
+        self.joint_centers_df = self.load_csv_from_content(centers_content, "Joint Centers")
+        self.joint_rotations_df = self.load_csv_from_content(rotations_content, "Joint Rotations")
+        
+        if self.debug_mode:
+            print(f"Stored CSV files successfully")
+            print(f"Centers shape: {self.joint_centers_df.shape}")
+            print(f"Rotations shape: {self.joint_rotations_df.shape}")
+    
+    def load_csv_files(self, joint_centers_file: str, joint_rotations_file: str):
+        """Load motion capture data from CSV files (for backward compatibility)"""
         if self.debug_mode:
             print(f"Loading joint centers from {joint_centers_file}")
             print(f"Loading joint rotations from {joint_rotations_file}")
         
-        self.joint_centers_data = self.load_txt_file(joint_centers_file)
-        self.joint_rotations_data = self.load_txt_file(joint_rotations_file)
+        if not os.path.exists(joint_centers_file):
+            raise FileNotFoundError(f"Joint centers file not found: {joint_centers_file}")
+        
+        if not os.path.exists(joint_rotations_file):
+            raise FileNotFoundError(f"Joint rotations file not found: {joint_rotations_file}")
+        
+        self.joint_centers_df = pd.read_csv(joint_centers_file)
+        self.joint_rotations_df = pd.read_csv(joint_rotations_file)
         
         if self.debug_mode:
-            print(f"Loaded {len(self.joint_centers_data)} frames of joint center data")
-            print(f"Loaded {len(self.joint_rotations_data)} frames of joint rotation data")
-        
-        if len(self.joint_centers_data) != len(self.joint_rotations_data):
-            print("Warning: Frame count mismatch between center and rotation data")
+            print(f"Loaded {len(self.joint_centers_df)} frames of joint center data")
+            print(f"Loaded {len(self.joint_rotations_df)} frames of joint rotation data")
     
     def mocap_to_threejs_coordinates(self, x: float, y: float, z: float) -> Tuple[float, float, float]:
         """Convert from mocap coordinates to Three.js coordinates
         
-        Mocap TXT: X=horizontal (left-right), Y=vertical (up-down), Z=depth (forward-back)
-        Three.js:  X=horizontal (left-right), Y=vertical (up-down), Z=depth (forward-back)
+        CSV data: X=horizontal (left-right), Y=vertical (up-down), Z=depth (forward-back)
+        Three.js: X=horizontal (left-right), Y=vertical (up-down), Z=depth (forward-back)
         
-        The coordinate systems actually match! But we need to:
-        1. Convert units (meters to centimeters for better scale)
-        2. Ensure proper orientation
+        Scale and orient for proper visualization
         """
-        # Convert meters to centimeters for better visualization scale
-        scale = 100.0
+        # Convert to appropriate scale for visualization
+        scale = 100.0  # Scale up for better visualization
         
         # Direct mapping since coordinate systems align
-        threejs_x = x * scale    # Left-right (same)
-        threejs_y = y * scale    # Up-down (same) 
-        threejs_z = z * scale    # Forward-back (same)
+        threejs_x = float(x) * scale
+        threejs_y = float(y) * scale
+        threejs_z = float(z) * scale
         
         return threejs_x, threejs_y, threejs_z
     
-    def extract_joint_position(self, centers_data: List[float], joint_index: int) -> Tuple[float, float, float]:
-        """Extract position for a specific joint from centers data
+    def extract_joint_position_from_row(self, row: pd.Series, joint_index: int) -> Tuple[float, float, float]:
+        """Extract position for a specific joint from a CSV row
         
-        Centers data has 300 fields = 25 joints × 12 values per joint
-        Each joint has: X, Y, Z, Length, v(X), v(Y), v(Z), v(abs), a(X), a(Y), a(Z), a(abs)
-        We only need the first 3 values (X, Y, Z) for position
+        Assumes CSV has columns that can be interpreted as positional data
+        Takes the first 3 numeric columns as X, Y, Z coordinates for each joint
         """
-        if joint_index >= 25 or len(centers_data) < (joint_index + 1) * 12:
+        try:
+            # Get numeric columns only
+            numeric_data = row.select_dtypes(include=[np.number])
+            
+            if len(numeric_data) < 3:
+                return 0.0, 0.0, 0.0
+            
+            # For multiple joints, assume data is arranged as:
+            # Joint1_X, Joint1_Y, Joint1_Z, Joint2_X, Joint2_Y, Joint2_Z, ...
+            start_idx = joint_index * 3
+            
+            if start_idx + 2 >= len(numeric_data):
+                # If not enough data for this joint, use modulo to cycle through available data
+                start_idx = (joint_index * 3) % max(3, len(numeric_data) - 2)
+            
+            x = numeric_data.iloc[start_idx] if start_idx < len(numeric_data) else numeric_data.iloc[0]
+            y = numeric_data.iloc[start_idx + 1] if start_idx + 1 < len(numeric_data) else numeric_data.iloc[1 % len(numeric_data)]
+            z = numeric_data.iloc[start_idx + 2] if start_idx + 2 < len(numeric_data) else numeric_data.iloc[2 % len(numeric_data)]
+            
+            return self.mocap_to_threejs_coordinates(x, y, z)
+            
+        except Exception as e:
+            if self.debug_mode:
+                print(f"Error extracting position for joint {joint_index}: {e}")
             return 0.0, 0.0, 0.0
-        
-        start_idx = joint_index * 12
-        x = centers_data[start_idx]     # X position
-        y = centers_data[start_idx + 1] # Y position  
-        z = centers_data[start_idx + 2] # Z position
-        
-        return self.mocap_to_threejs_coordinates(x, y, z)
     
-    def extract_joint_rotation(self, rotations_data: List[float], joint_index: int) -> Tuple[float, float, float]:
-        """Extract rotation for a specific joint from rotations data
+    def extract_joint_rotation_from_row(self, row: pd.Series, joint_index: int) -> Tuple[float, float, float]:
+        """Extract rotation for a specific joint from a CSV row
         
-        Rotations data has 252 fields = 21 joints × 12 values per joint
-        The first 3 values appear to be rotation angles in radians
+        Assumes the first 3 numeric values are rotation angles
         """
-        if joint_index >= 21 or len(rotations_data) < (joint_index + 1) * 12:
+        try:
+            # Get numeric columns only
+            numeric_data = row.select_dtypes(include=[np.number])
+            
+            if len(numeric_data) < 3:
+                return 0.0, 0.0, 0.0
+            
+            # For multiple joints, assume data is arranged as:
+            # Joint1_RX, Joint1_RY, Joint1_RZ, Joint2_RX, Joint2_RY, Joint2_RZ, ...
+            start_idx = joint_index * 3
+            
+            if start_idx + 2 >= len(numeric_data):
+                # If not enough data for this joint, use modulo to cycle through available data
+                start_idx = (joint_index * 3) % max(3, len(numeric_data) - 2)
+            
+            rx = numeric_data.iloc[start_idx] if start_idx < len(numeric_data) else numeric_data.iloc[0]
+            ry = numeric_data.iloc[start_idx + 1] if start_idx + 1 < len(numeric_data) else numeric_data.iloc[1 % len(numeric_data)]
+            rz = numeric_data.iloc[start_idx + 2] if start_idx + 2 < len(numeric_data) else numeric_data.iloc[2 % len(numeric_data)]
+            
+            # Convert to degrees if data appears to be in radians
+            # Check if values are in reasonable degree range (-360 to 360)
+            if abs(rx) <= math.pi and abs(ry) <= math.pi and abs(rz) <= math.pi:
+                rx = math.degrees(rx)
+                ry = math.degrees(ry)
+                rz = math.degrees(rz)
+            
+            return float(rx), float(ry), float(rz)
+            
+        except Exception as e:
+            if self.debug_mode:
+                print(f"Error extracting rotation for joint {joint_index}: {e}")
             return 0.0, 0.0, 0.0
-        
-        start_idx = joint_index * 12
-        rx = rotations_data[start_idx]     # X rotation (radians)
-        ry = rotations_data[start_idx + 1] # Y rotation (radians)
-        rz = rotations_data[start_idx + 2] # Z rotation (radians)
-        
-        # Convert radians to degrees
-        rx_deg = math.degrees(rx)
-        ry_deg = math.degrees(ry)
-        rz_deg = math.degrees(rz)
-        
-        return rx_deg, ry_deg, rz_deg
     
     def get_frame_data(self, frame_index: int) -> Dict[str, Dict[str, float]]:
         """Get position and rotation data for all joints in a specific frame"""
-        if frame_index >= len(self.joint_centers_data) or frame_index >= len(self.joint_rotations_data):
+        if self.joint_centers_df is None or self.joint_rotations_df is None:
+            raise ValueError("CSV data not loaded. Call store_uploaded_files() first.")
+        
+        if frame_index >= len(self.joint_centers_df) or frame_index >= len(self.joint_rotations_df):
             raise IndexError(f"Frame {frame_index} out of range")
         
-        centers_frame = self.joint_centers_data[frame_index]
-        rotations_frame = self.joint_rotations_data[frame_index]
+        centers_row = self.joint_centers_df.iloc[frame_index]
+        rotations_row = self.joint_rotations_df.iloc[frame_index]
         
         frame_data = {}
         
         for i, joint_name in enumerate(JOINT_NAMES):
-            # Get position (use modulo to cycle through available data)
-            position_joint_idx = i % 25  # 25 joints in centers data
-            x, y, z = self.extract_joint_position(centers_frame, position_joint_idx)
+            # Get position data
+            x, y, z = self.extract_joint_position_from_row(centers_row, i)
             
-            # Get rotation (use modulo to cycle through available data) 
-            rotation_joint_idx = i % 21  # 21 joints in rotations data
-            rx, ry, rz = self.extract_joint_rotation(rotations_frame, rotation_joint_idx)
+            # Get rotation data
+            rx, ry, rz = self.extract_joint_rotation_from_row(rotations_row, i)
             
             frame_data[joint_name] = {
                 "position": {"x": x, "y": y, "z": z},
@@ -222,10 +310,10 @@ class DataParser:
     
     def get_all_frames_data(self) -> List[Dict[str, Dict[str, float]]]:
         """Get motion data for all frames"""
-        if not self.joint_centers_data or not self.joint_rotations_data:
-            raise ValueError("Motion data not loaded. Call load_motion_data() first.")
+        if self.joint_centers_df is None or self.joint_rotations_df is None:
+            raise ValueError("CSV data not loaded. Call store_uploaded_files() first.")
         
-        num_frames = min(len(self.joint_centers_data), len(self.joint_rotations_data))
+        num_frames = min(len(self.joint_centers_df), len(self.joint_rotations_df))
         frames_data = []
         
         for frame_idx in range(num_frames):
@@ -236,12 +324,10 @@ class DataParser:
     
     def get_motion_summary(self) -> Dict[str, Any]:
         """Get summary information about the motion data"""
-        if not self.joint_centers_data or not self.joint_rotations_data:
-            return {
-                "error": "Motion data not loaded"
-            }
+        if self.joint_centers_df is None or self.joint_rotations_df is None:
+            return {"error": "CSV data not loaded"}
         
-        num_frames = min(len(self.joint_centers_data), len(self.joint_rotations_data))
+        num_frames = min(len(self.joint_centers_df), len(self.joint_rotations_df))
         duration = num_frames / self.frame_rate
         
         return {
@@ -251,7 +337,11 @@ class DataParser:
             "totalFrames": num_frames,
             "frameRate": self.frame_rate,
             "duration": duration,
-            "fps": self.frame_rate
+            "fps": self.frame_rate,
+            "centersColumns": list(self.joint_centers_df.columns),
+            "rotationsColumns": list(self.joint_rotations_df.columns),
+            "centersShape": self.joint_centers_df.shape,
+            "rotationsShape": self.joint_rotations_df.shape
         }
     
     def to_json_format(self) -> Dict[str, Any]:
@@ -261,65 +351,58 @@ class DataParser:
         if "error" in summary:
             return summary
         
-        frames_data = self.get_all_frames_data()
-        
-        # Simplify frame data format for better performance
-        simplified_frames = []
-        for frame in frames_data:
-            simplified_frame = {}
-            for joint_name, joint_data in frame.items():
-                simplified_frame[joint_name] = {
-                    "x": joint_data["position"]["x"],
-                    "y": joint_data["position"]["y"], 
-                    "z": joint_data["position"]["z"],
-                    "rx": joint_data["rotation"]["x"],
-                    "ry": joint_data["rotation"]["y"],
-                    "rz": joint_data["rotation"]["z"]
-                }
-            simplified_frames.append(simplified_frame)
-        
-        return {
-            "jointNames": summary["jointNames"],
-            "boneConnections": summary["boneConnections"],
-            "jointOffsets": summary["jointOffsets"],
-            "frames": simplified_frames,
-            "frameRate": summary["frameRate"],
-            "duration": summary["duration"],
-            "totalFrames": summary["totalFrames"],
-            "fps": summary["fps"]
-        }
+        try:
+            frames_data = self.get_all_frames_data()
+            
+            # Simplify frame data format for better performance
+            simplified_frames = []
+            for frame in frames_data:
+                simplified_frame = {}
+                for joint_name, joint_data in frame.items():
+                    simplified_frame[joint_name] = {
+                        "x": joint_data["position"]["x"],
+                        "y": joint_data["position"]["y"], 
+                        "z": joint_data["position"]["z"],
+                        "rx": joint_data["rotation"]["x"],
+                        "ry": joint_data["rotation"]["y"],
+                        "rz": joint_data["rotation"]["z"]
+                    }
+                simplified_frames.append(simplified_frame)
+            
+            return {
+                "jointNames": summary["jointNames"],
+                "boneConnections": summary["boneConnections"],
+                "jointOffsets": summary["jointOffsets"],
+                "frames": simplified_frames,
+                "frameRate": summary["frameRate"],
+                "duration": summary["duration"],
+                "totalFrames": summary["totalFrames"],
+                "fps": summary["fps"],
+                "dataSource": "CSV Upload",
+                "centersColumns": summary["centersColumns"],
+                "rotationsColumns": summary["rotationsColumns"]
+            }
+            
+        except Exception as e:
+            return {"error": f"Error processing motion data: {str(e)}"}
 
 
-def create_parser_from_files(centers_file: str, rotations_file: str, debug=False) -> DataParser:
-    """Convenience function to create and load a DataParser"""
-    parser = DataParser(debug_mode=debug)
-    parser.load_motion_data(centers_file, rotations_file)
+def create_parser_from_files(centers_file: str, rotations_file: str, debug=False) -> CSVDataParser:
+    """Convenience function to create and load a DataParser from files"""
+    parser = CSVDataParser(debug_mode=debug)
+    parser.load_csv_files(centers_file, rotations_file)
+    return parser
+
+
+def create_parser_from_content(centers_content: str, rotations_content: str, debug=False) -> CSVDataParser:
+    """Convenience function to create and load a DataParser from CSV content"""
+    parser = CSVDataParser(debug_mode=debug)
+    parser.store_uploaded_files(centers_content, rotations_content)
     return parser
 
 
 if __name__ == "__main__":
-    # Test the data parser
-    centers_file = "../jointcenterscooper.txt"
-    rotations_file = "../jointrotationscooper.txt"
-    
-    if os.path.exists(centers_file) and os.path.exists(rotations_file):
-        parser = create_parser_from_files(centers_file, rotations_file, debug=True)
-        
-        # Test first frame
-        frame_0 = parser.get_frame_data(0)
-        print("\nFirst frame data (sample joints):")
-        for joint_name in ["Hips", "Head", "LeftHand", "RightHand"]:
-            if joint_name in frame_0:
-                data = frame_0[joint_name]
-                print(f"{joint_name}: pos=({data['position']['x']:.1f}, {data['position']['y']:.1f}, {data['position']['z']:.1f}) "
-                      f"rot=({data['rotation']['x']:.1f}, {data['rotation']['y']:.1f}, {data['rotation']['z']:.1f})")
-        
-        # Test JSON format
-        json_data = parser.to_json_format()
-        print(f"\nJSON summary:")
-        print(f"- Joints: {len(json_data['jointNames'])}")
-        print(f"- Bones: {len(json_data['boneConnections'])}")
-        print(f"- Frames: {json_data['totalFrames']}")
-        print(f"- Duration: {json_data['duration']:.1f}s")
-    else:
-        print("Test files not found")
+    # Test the CSV data parser
+    print("CSV Motion Capture Data Parser")
+    print("Usage: Upload CSV files through the web interface")
+    print("For testing, ensure you have CSV files with numeric motion capture data")
