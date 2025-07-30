@@ -1,11 +1,17 @@
 # Baseball Motion Capture Web Application
 
-A comprehensive web application for converting and visualizing baseball motion capture data in 3D. This project converts `.txt` mocap data to BVH format for Blender import and provides a real-time 3D skeletal animation viewer.
+A comprehensive web application for converting and visualizing baseball motion capture data in 3D. This project supports both CSV and TXT format motion capture files, converts them to BVH format for Blender import, and provides a real-time 3D skeletal animation viewer.
 
 ## 🎯 Features
 
+### Motion Capture File Support
+- **CSV Support (New!)**: Primary format for motion capture data
+- **TXT Support**: Legacy format still fully supported
+- **Automatic Format Detection**: Application automatically detects and uses available format
+- **CSV Priority**: When both formats exist, CSV files are used
+
 ### Motion Capture Conversion
-- **TXT to BVH Converter**: Converts Cooper motion capture `.txt` files to industry-standard BVH format
+- **CSV/TXT to BVH Converter**: Converts motion capture files to industry-standard BVH format
 - **Blender Compatibility**: Generated BVH files are optimized for seamless Blender import
 - **Standard Skeleton**: Uses anatomically correct human skeleton hierarchy optimized for baseball motions
 
@@ -25,13 +31,19 @@ A comprehensive web application for converting and visualizing baseball motion c
 
 ```
 baseball-mocap/
-├── mocap_to_bvh.py              # Motion capture to BVH converter
+├── mocap_to_bvh.py              # TXT to BVH converter
+├── mocap_to_bvh_csv.py          # CSV to BVH converter (New!)
+├── txt_to_csv_converter.py      # Utility to convert TXT to CSV
 ├── cooper_baseball_motion.bvh    # Generated BVH file
-├── jointcenterscooper.txt        # Input: Joint center positions
-├── jointrotationscooper.txt      # Input: Joint rotations
+├── jointcenterscooper.txt        # Input: Joint center positions (TXT)
+├── jointrotationscooper.txt      # Input: Joint rotations (TXT)
+├── jointcenterscooper.csv        # Input: Joint center positions (CSV)
+├── jointrotationscooper.csv      # Input: Joint rotations (CSV)
 ├── baseballspecificcooper.txt    # Input: Baseball-specific measurements
 ├── webapp/                       # Web application
 │   ├── app.py                   # Flask backend server
+│   ├── data_parser.py           # TXT data parser
+│   ├── csv_data_parser.py       # CSV data parser (New!)
 │   ├── templates/
 │   │   └── index.html           # Main web interface
 │   └── static/
@@ -46,24 +58,38 @@ baseball-mocap/
 
 ## 🚀 Quick Start
 
-### 1. Convert Motion Capture Data
+### 1. Convert TXT to CSV (Optional but Recommended)
 
-Convert your `.txt` mocap files to BVH format:
+If you have TXT files and want to use the newer CSV format:
 
+```bash
+python3 txt_to_csv_converter.py --convert-all
+# Or with descriptive headers:
+python3 txt_to_csv_converter.py --convert-all --with-headers
+```
+
+### 2. Convert Motion Capture Data to BVH
+
+For CSV files:
+```bash
+python3 mocap_to_bvh_csv.py [output_filename.bvh]
+```
+
+For TXT files:
 ```bash
 python3 mocap_to_bvh.py [output_filename.bvh]
 ```
 
 This will generate `cooper_baseball_motion.bvh` ready for Blender import.
 
-### 2. Import to Blender
+### 3. Import to Blender
 
 1. Open Blender
 2. Go to `File > Import > Motion Capture (.bvh)`
 3. Select the generated `.bvh` file
 4. The skeletal animation will be imported and ready for use
 
-### 3. Launch Web Application
+### 4. Launch Web Application
 
 Start the web application to view and analyze the motion data:
 
@@ -94,9 +120,15 @@ Open your browser to `http://localhost:5000` to access the 3D motion viewer.
 
 ## 📊 Data Format
 
+### CSV Format (Recommended)
+CSV files provide better compatibility and easier data manipulation:
+- Supports multiple delimiters (comma, semicolon, tab)
+- Automatic header detection
+- Compatible with Excel, pandas, and other data tools
+
 ### Input Files
-- **jointcenterscooper.txt**: 300 fields (25 joints × 12 values: X,Y,Z,Length,v(X),v(Y),v(Z),v(abs),a(X),a(Y),a(Z),a(abs))
-- **jointrotationscooper.txt**: 252 fields (21 joints × 12 values)
+- **jointcenterscooper.csv/txt**: 300 fields (25 joints × 12 values: X,Y,Z,Length,v(X),v(Y),v(Z),v(abs),a(X),a(Y),a(Z),a(abs))
+- **jointrotationscooper.csv/txt**: 252 fields (21 joints × 12 values)
 - **baseballspecificcooper.txt**: 63 fields (baseball-specific measurements)
 
 ### Output BVH
@@ -104,6 +136,17 @@ Open your browser to `http://localhost:5000` to access the 3D motion viewer.
 - 900 frames of animation data
 - 30 FPS frame rate
 - Compatible with Blender, Maya, and other 3D software
+
+## 🔄 API Endpoints
+
+The web application provides several API endpoints:
+
+- `GET /api/motion-data` - Get complete motion data as JSON
+- `GET /api/motion-summary` - Get motion summary without frame data
+- `GET /api/motion-frame/<frame>` - Get specific frame data
+- `POST /api/convert-mocap` - Convert mocap files to BVH
+- `POST /api/convert-txt-to-csv` - Convert TXT files to CSV format
+- `GET /api/health` - Health check and file status
 
 ## 🎯 Baseball Motion Analysis
 
@@ -143,7 +186,7 @@ The application is specifically designed for baseball motion analysis:
 ## 🔧 Customization
 
 ### Skeleton Modification
-Edit the `setup_skeleton()` method in `mocap_to_bvh.py` to customize the joint hierarchy for different sports or applications.
+Edit the `setup_skeleton()` method in `mocap_to_bvh_csv.py` or `mocap_to_bvh.py` to customize the joint hierarchy for different sports or applications.
 
 ### Visual Styling
 Modify `webapp/static/css/style.css` to customize the application appearance and branding.
