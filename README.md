@@ -1,176 +1,207 @@
-# Baseball Motion Capture Web Application
+# Baseball Motion Capture Viewer (CSV Version)
 
-A comprehensive web application for converting and visualizing baseball motion capture data in 3D. This project converts `.txt` mocap data to BVH format for Blender import and provides a real-time 3D skeletal animation viewer.
+A 3D web application for viewing baseball motion capture data from CSV files. This application displays skeletal animations using Three.js and provides an interactive 3D viewer for analyzing baseball motion data.
 
-## 🎯 Features
+## Features
 
-### Motion Capture Conversion
-- **TXT to BVH Converter**: Converts Cooper motion capture `.txt` files to industry-standard BVH format
-- **Blender Compatibility**: Generated BVH files are optimized for seamless Blender import
-- **Standard Skeleton**: Uses anatomically correct human skeleton hierarchy optimized for baseball motions
+- **3D Skeletal Animation**: Real-time 3D visualization of motion capture data
+- **CSV Data Support**: Works with CSV files containing joint centers and rotations
+- **Interactive Controls**: Play, pause, reset, and frame-by-frame navigation
+- **Multiple View Angles**: Front, side, top, and free camera views
+- **Motion Analysis**: Duration, FPS, and frame count information
+- **Modern Web Interface**: Responsive design with intuitive controls
 
-### 3D Visualization
-- **Real-time 3D Animation**: Interactive skeletal animation viewer using Three.js
-- **Multiple View Modes**: Front, side, top, and free camera views
-- **Visual Controls**: Toggle skeleton bones, joint spheres, ground plane, and trajectory
-- **Animation Controls**: Play, pause, reset, frame scrubbing, and speed adjustment
+## Data Format
 
-### Web Interface
-- **Modern UI**: Clean, responsive interface with baseball-themed styling
-- **Real-time Controls**: Interactive sliders and buttons for animation control
-- **Motion Statistics**: Display frame count, duration, FPS, and other metadata
-- **Export Functionality**: Export motion data and analysis results
+The application expects two CSV files:
 
-## 📁 Project Structure
-
-```
-baseball-mocap/
-├── mocap_to_bvh.py              # Motion capture to BVH converter
-├── cooper_baseball_motion.bvh    # Generated BVH file
-├── jointcenterscooper.txt        # Input: Joint center positions
-├── jointrotationscooper.txt      # Input: Joint rotations
-├── baseballspecificcooper.txt    # Input: Baseball-specific measurements
-├── webapp/                       # Web application
-│   ├── app.py                   # Flask backend server
-│   ├── templates/
-│   │   └── index.html           # Main web interface
-│   └── static/
-│       ├── css/
-│       │   └── style.css        # Application styling
-│       └── js/
-│           ├── bvh-loader.js    # BVH file parser for Three.js
-│           ├── motion-viewer.js # 3D visualization engine
-│           └── app.js           # Main application logic
-└── README.md                    # This file
+### 1. `joint_centers.csv`
+Contains joint position data with the following structure:
+```csv
+frame,X1,Y1,Z1,Length1,vX1,vY1,vZ1,vAbs1,aX1,aY1,aZ1,aAbs1,X2,Y2,Z2,...
+0,0.28431338,-0.01509073,1.05814362,0.00000000,3.84870529,0.28641033,...
+1,0.29259282,0.00704067,1.06826925,0.09034911,-0.10746998,0.16801105,...
 ```
 
-## 🚀 Quick Start
+### 2. `joint_rotations.csv`
+Contains joint rotation data with the same structure:
+```csv
+frame,X1,Y1,Z1,Length1,vX1,vY1,vZ1,vAbs1,aX1,aY1,aZ1,aAbs1,X2,Y2,Z2,...
+0,0.00000000,0.00000000,0.00000000,0.00000000,0.00000000,0.00000000,...
+1,0.00000000,0.00000000,0.00000000,0.00000000,0.00000000,0.00000000,...
+```
 
-### 1. Convert Motion Capture Data
+## Installation
 
-Convert your `.txt` mocap files to BVH format:
+1. **Clone the repository**:
+   ```bash
+   git clone <repository-url>
+   cd baseball-motion-capture
+   ```
+
+2. **Install dependencies**:
+   ```bash
+   pip3 install --break-system-packages flask numpy
+   ```
+
+3. **Prepare your data**:
+   - Place your `joint_centers.csv` and `joint_rotations.csv` files in the root directory
+   - Ensure the CSV files follow the expected format
+
+## Usage
+
+### Starting the Application
+
+1. **Run the Flask application**:
+   ```bash
+   cd webapp
+   python3 app.py
+   ```
+
+2. **Access the web interface**:
+   - Open your browser and navigate to `http://localhost:5000`
+   - The 3D viewer will load automatically
+
+### API Endpoints
+
+- **`/`**: Main 3D viewer interface
+- **`/api/health`**: Health check and system status
+- **`/api/motion-summary`**: Motion data summary (frames, duration, etc.)
+- **`/api/motion-data`**: Complete motion data in JSON format
+- **`/api/motion-frame/<frame_number>`**: Data for a specific frame
+
+### Example API Usage
 
 ```bash
-python3 mocap_to_bvh.py [output_filename.bvh]
+# Health check
+curl http://localhost:5000/api/health
+
+# Motion summary
+curl http://localhost:5000/api/motion-summary
+
+# Complete motion data
+curl http://localhost:5000/api/motion-data
 ```
 
-This will generate `cooper_baseball_motion.bvh` ready for Blender import.
-
-### 2. Import to Blender
-
-1. Open Blender
-2. Go to `File > Import > Motion Capture (.bvh)`
-3. Select the generated `.bvh` file
-4. The skeletal animation will be imported and ready for use
-
-### 3. Launch Web Application
-
-Start the web application to view and analyze the motion data:
-
-```bash
-cd webapp
-python3 app.py
-```
-
-Open your browser to `http://localhost:5000` to access the 3D motion viewer.
-
-## 🎮 Using the Web Application
+## Controls
 
 ### Animation Controls
-- **Play/Pause**: Control animation playback
-- **Frame Slider**: Scrub through animation frames
+- **Play/Pause**: Start or stop animation playback
+- **Reset**: Return to the first frame
+- **Frame Slider**: Navigate to specific frames
 - **Speed Control**: Adjust playback speed (0.1x to 3.0x)
-- **Reset**: Return to first frame
 
 ### View Controls
-- **Camera Views**: Switch between front, side, top, and free views
-- **Mouse Controls**: Click and drag to rotate camera, scroll to zoom
-- **Visual Toggles**: Show/hide skeleton, joints, ground plane
+- **Front View**: View from the front
+- **Side View**: View from the side
+- **Top View**: View from above
+- **Free View**: Free camera movement
 
-### Data Analysis
-- **Motion Statistics**: View frame count, duration, and FPS
-- **Real-time Display**: Current frame and playback status
-- **Export**: Download motion data in JSON format
+### Display Options
+- **Show Skeleton**: Toggle bone connections
+- **Show Joints**: Toggle joint markers
+- **Show Ground**: Toggle ground plane
+- **Show Trajectory**: Toggle motion path
 
-## 📊 Data Format
+## Technical Details
 
-### Input Files
-- **jointcenterscooper.txt**: 300 fields (25 joints × 12 values: X,Y,Z,Length,v(X),v(Y),v(Z),v(abs),a(X),a(Y),a(Z),a(abs))
-- **jointrotationscooper.txt**: 252 fields (21 joints × 12 values)
-- **baseballspecificcooper.txt**: 63 fields (baseball-specific measurements)
+### Architecture
+- **Backend**: Flask web server with CSV data parser
+- **Frontend**: Three.js 3D graphics library
+- **Data Format**: JSON API for motion data
+- **Coordinate System**: Meters to centimeters conversion for visualization
 
-### Output BVH
-- Standard hierarchical joint structure
-- 900 frames of animation data
-- 30 FPS frame rate
-- Compatible with Blender, Maya, and other 3D software
+### Data Processing
+- **CSV Parser**: Handles joint centers and rotations from CSV files
+- **Coordinate Conversion**: Converts motion capture coordinates to Three.js format
+- **Frame Processing**: Extracts position and rotation data for each joint
+- **Skeleton Construction**: Builds 3D skeleton from joint connections
 
-## 🎯 Baseball Motion Analysis
+### Joint Structure
+The system supports 22 joints:
+- **Spine**: Hips, Spine, Spine1, Spine2, Neck, Head
+- **Arms**: Left/Right Shoulder, Arm, ForeArm, Hand
+- **Legs**: Left/Right UpLeg, Leg, Foot, ToeBase
 
-The application is specifically designed for baseball motion analysis:
+## Development
 
-### Supported Motions
-- Pitching mechanics
-- Batting swings  
-- Fielding movements
-- Running and base stealing
+### Project Structure
+```
+├── webapp/
+│   ├── app.py                 # Flask application
+│   ├── csv_data_parser.py     # CSV data parser
+│   ├── templates/
+│   │   └── index.html        # Main web interface
+│   └── static/
+│       ├── css/              # Stylesheets
+│       └── js/               # JavaScript files
+├── joint_centers.csv         # Joint position data
+├── joint_rotations.csv       # Joint rotation data
+└── README.md                # This file
+```
 
-### Key Features for Baseball
-- Anatomically accurate skeleton for baseball-specific movements
-- Optimized joint hierarchy for upper body analysis
-- Support for full-body motion capture including leg movement
-- Coordinate system aligned with baseball field orientation
+### Adding New Data
+1. Prepare your CSV files following the expected format
+2. Place them in the root directory
+3. Restart the Flask application
+4. The new data will be automatically loaded
 
-## 🛠️ Technical Details
+### Customization
+- **Joint Names**: Modify `JOINT_NAMES` in `csv_data_parser.py`
+- **Bone Connections**: Update `BONE_CONNECTIONS` for different skeleton structures
+- **Coordinate System**: Adjust `mocap_to_threejs_coordinates()` for different coordinate systems
+- **Visualization**: Modify Three.js code in `static/js/motion-viewer.js`
 
-### Technologies Used
-- **Backend**: Python, Flask
-- **3D Graphics**: Three.js, WebGL
-- **Data Processing**: Custom BVH parser and skeletal animation system
-- **UI**: Modern CSS with responsive design
+## Troubleshooting
 
-### System Requirements
-- Python 3.7+
-- Modern web browser with WebGL support
-- 4GB RAM recommended for large motion datasets
+### Common Issues
 
-### Browser Compatibility
-- Chrome 80+
-- Firefox 75+
-- Safari 13+
-- Edge 80+
+1. **CSV files not found**:
+   - Ensure `joint_centers.csv` and `joint_rotations.csv` are in the root directory
+   - Check file permissions
 
-## 🔧 Customization
+2. **Flask not installed**:
+   ```bash
+   pip3 install --break-system-packages flask
+   ```
 
-### Skeleton Modification
-Edit the `setup_skeleton()` method in `mocap_to_bvh.py` to customize the joint hierarchy for different sports or applications.
+3. **Port already in use**:
+   - Change the port in `app.py` or kill the existing process
+   - Default port is 5000
 
-### Visual Styling
-Modify `webapp/static/css/style.css` to customize the application appearance and branding.
+4. **Data not loading**:
+   - Check CSV file format
+   - Verify file paths in the application
+   - Check browser console for JavaScript errors
 
-### Animation Features
-Extend `motion-viewer.js` to add new visualization features like:
-- Trajectory plotting
-- Force vector display
-- Comparative motion analysis
-- Performance metrics overlay
+### Debug Mode
+Enable debug mode for detailed logging:
+```bash
+curl "http://localhost:5000/api/motion-data?debug=true"
+```
 
-## 📈 Future Enhancements
+## License
 
-- **Multi-athlete Comparison**: Side-by-side motion analysis
-- **Performance Metrics**: Automated biomechanical analysis
-- **Video Synchronization**: Sync motion data with video footage
-- **Machine Learning**: Motion pattern recognition and analysis
-- **Real-time Capture**: Integration with live motion capture systems
+This project is open source and available under the MIT License.
 
-## 🤝 Contributing
+## Contributing
 
-This project was developed as a comprehensive motion capture analysis tool. Feel free to extend and modify for your specific needs.
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Test thoroughly
+5. Submit a pull request
 
-## 📄 License
+## Version History
 
-This project is provided as-is for educational and research purposes.
+- **v3.0**: CSV-based data processing
+- **v2.0**: JSON motion data API
+- **v1.0**: Original TXT-based system
 
----
+## Support
 
-**Built with ❤️ for baseball motion analysis and 3D visualization**
+For issues and questions:
+1. Check the troubleshooting section
+2. Review the API documentation
+3. Examine the example CSV files
+4. Enable debug mode for detailed error messages
